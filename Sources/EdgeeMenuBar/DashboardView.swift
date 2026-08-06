@@ -68,7 +68,7 @@ struct DashboardView: View {
         if sessions.count >= 2 {
             VStack(alignment: .leading, spacing: 24) {
                 tokensChart(sessions)
-                compressionChart(sessions)
+                agentChart(stats)
             }
         }
     }
@@ -113,36 +113,33 @@ struct DashboardView: View {
         }
     }
 
-    @ViewBuilder
-    private func compressionChart(_ sessions: [Stats.SessionBrief]) -> some View {
-        let points = sessions.filter { $0.compressionPct != nil }
-        if points.count >= 2 {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Compression").font(.headline)
-                Chart(points) { session in
-                    LineMark(
-                        x: .value("Session", session.endedAtUnix),
-                        y: .value("Compression %", Int(session.compressionPct ?? 0))
-                    )
-                    .foregroundStyle(.green)
-                    .interpolationMethod(.catmullRom)
-                    PointMark(
-                        x: .value("Session", session.endedAtUnix),
-                        y: .value("Compression %", Int(session.compressionPct ?? 0))
-                    )
-                    .foregroundStyle(.green)
+    /// Total tokens (in + out) per agent across recent sessions — where usage
+    /// concentrates. Horizontal bars so agent names stay readable.
+    private func agentChart(_ stats: Stats) -> some View {
+        let usage = agentUsage(stats)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Usage by agent").font(.headline)
+            Chart(usage) { agent in
+                BarMark(
+                    x: .value("Tokens", agent.tokens),
+                    y: .value("Agent", agent.tool)
+                )
+                .foregroundStyle(Theme.brand.gradient)
+                .cornerRadius(4)
+                .annotation(position: .trailing, alignment: .leading) {
+                    Text("\(TokenFormat.short(UInt64(agent.tokens)))  ·  \(agent.requests) req")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                .chartYScale(domain: 0...100)
-                .chartXAxis {
-                    AxisMarks(values: points.map(\.endedAtUnix)) { value in
-                        if let unix = value.as(Int64.self) {
-                            AxisValueLabel { Text(timeLabel(unix)) }
-                            AxisTick()
-                        }
+            }
+            .chartXAxis {
+                AxisMarks { value in
+                    AxisGridLine()
+                    if let count = value.as(Int.self) {
+                        AxisValueLabel { Text(TokenFormat.short(UInt64(max(0, count)))) }
                     }
                 }
-                .frame(height: 150)
             }
+            .frame(height: CGFloat(usage.count) * 42 + 24)
         }
     }
 
@@ -213,10 +210,32 @@ struct DashboardView: View {
         stats.recent.sorted { $0.endedAtUnix < $1.endedAtUnix }.suffix(15).map { $0 }
     }
 
+    /// Total tokens and requests per agent across recent sessions, biggest first.
+    private func agentUsage(_ stats: Stats) -> [AgentUsage] {
+        var totals: [String: (tokens: Int, requests: UInt64)] = [:]
+        for session in stats.recent {
+            let existing = totals[session.toolName] ?? (0, 0)
+            totals[session.toolName] = (
+                existing.tokens + Int(session.inputTokens) + Int(session.outputTokens),
+                existing.requests + session.requests
+            )
+        }
+        return totals
+            .map { AgentUsage(tool: $0.key, tokens: $0.value.tokens, requests: $0.value.requests) }
+            .sorted { $0.tokens > $1.tokens }
+    }
+
     private func timeLabel(_ unix: Int64) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(unix)))
+    }
+
+    private struct AgentUsage: Identifiable {
+        let tool: String
+        let tokens: Int
+        let requests: UInt64
+        var id: String { tool }
     }
 
     private func relative(_ unix: Int64) -> String {
