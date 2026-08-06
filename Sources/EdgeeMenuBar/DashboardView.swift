@@ -35,10 +35,10 @@ struct DashboardView: View {
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
             kpi("Sessions", "\(stats.sessions)", "rectangle.stack")
             kpi("Requests", "\(totals.requests)", "arrow.left.arrow.right")
-            kpi("Tokens saved", TokenFormat.short(totals.tokenCostSavings), "leaf.fill", tint: .green)
+            kpi("Compression", totals.compressionPct.map { "\($0)%" } ?? "—", "arrow.down.right.and.arrow.up.left", tint: Theme.brand)
             kpi("Tokens in", TokenFormat.short(totals.inputTokens), "arrow.down")
             kpi("Tokens out", TokenFormat.short(totals.outputTokens), "arrow.up")
-            kpi("Compression", totals.compressionPct.map { "\($0)%" } ?? "—", "arrow.down.right.and.arrow.up.left", tint: Theme.brand)
+            kpi("Errors", "\(totals.errors)", "exclamationmark.triangle", tint: totals.errors > 0 ? .red : .secondary)
         }
     }
 
