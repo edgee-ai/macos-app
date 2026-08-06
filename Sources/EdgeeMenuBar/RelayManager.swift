@@ -63,13 +63,52 @@ final class RelayManager: ObservableObject {
     /// this window and flip straight to `.failed` instead.
     private static let readyGrace: Duration = .milliseconds(1200)
 
+    /// Cap on retained log lines per target — enough to scroll back through a
+    /// session without growing unbounded over a long-lived relay.
+    private static let maxLogLines = 1000
+
     @Published private(set) var states: [String: RelayRunState] = [:]
+    /// Per-target live log lines (merged stdout+stderr), for the window's console.
+    @Published private(set) var logs: [String: [String]] = [:]
     private var processes: [String: Process] = [:]
     /// Ids we've asked to stop, so the termination handler can tell a
     /// user-requested shutdown from an unexpected exit/crash.
     private var stopping: Set<String> = []
 
     func state(_ id: String) -> RelayRunState { states[id] ?? .stopped }
+
+    func log(_ id: String) -> [String] { logs[id] ?? [] }
+
+    func clearLog(_ id: String) { logs[id] = [] }
+
+    private func appendLog(_ id: String, _ line: String) {
+        var lines = logs[id] ?? []
+        lines.append(line)
+        if lines.count > Self.maxLogLines {
+            lines.removeFirst(lines.count - Self.maxLogLines)
+        }
+        logs[id] = lines
+    }
+
+    /// Strip ANSI SGR color escapes so the relay's colored log output renders as
+    /// plain text in the console view.
+    nonisolated static func stripANSI(_ line: String) -> String {
+        guard line.contains("\u{1B}") else { return line }
+        let scalars = Array(line.unicodeScalars)
+        var result = String.UnicodeScalarView()
+        var i = 0
+        while i < scalars.count {
+            if scalars[i] == "\u{1B}", i + 1 < scalars.count, scalars[i + 1] == "[" {
+                i += 2
+                while i < scalars.count, scalars[i] != "m" { i += 1 }
+                i += 1  // consume the terminating 'm'
+            } else {
+                result.append(scalars[i])
+                i += 1
+            }
+        }
+        return String(result)
+    }
 
     func toggle(_ target: RelayTarget) {
         switch state(target.id) {
@@ -84,11 +123,16 @@ final class RelayManager: ObservableObject {
         guard processes[target.id] == nil else { return }
         states[target.id] = .starting
         stopping.remove(target.id)
+        logs[target.id] = []  // fresh log for this session
 
         var args = ["relay", target.id, "--non-interactive"]
         if target.proxyOnly { args.append("--no-launch") }
 
-        guard let spawned = EdgeeCLI.spawn(args) else {
+        let id = target.id
+        guard let spawned = EdgeeCLI.spawn(args, onLine: { [weak self] line in
+            let clean = RelayManager.stripANSI(line)
+            Task { @MainActor in self?.appendLog(id, clean) }
+        }) else {
             states[target.id] = .failed("could not start edgee")
             return
         }

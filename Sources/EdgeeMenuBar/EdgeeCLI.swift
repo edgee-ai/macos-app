@@ -129,23 +129,45 @@ enum EdgeeCLI {
     }
 
     /// Spawn a long-running edgee subprocess (e.g. a relay) in the background —
-    /// no shell, no window. stdout is discarded and stderr is continuously drained
-    /// into a bounded tail, so the child never blocks on a full pipe (which would
-    /// silently wedge the relay). Returns the process and its stderr tail, or nil
-    /// if it couldn't be launched.
-    static func spawn(_ args: [String]) -> (process: Process, stderr: StderrTail)? {
+    /// no shell, no window. Both stdout and stderr are continuously drained and
+    /// split into lines delivered to `onLine`, so the child never blocks on a full
+    /// pipe (which would silently wedge the relay) and the app can render a live
+    /// log. stderr additionally feeds a bounded tail so the last error line is
+    /// available as the failure cause. Returns the process and its stderr tail, or
+    /// nil if it couldn't be launched.
+    ///
+    /// `onLine` is invoked off the main thread on the pipe's I/O queue — hop to the
+    /// main actor before touching UI state.
+    static func spawn(
+        _ args: [String], onLine: @escaping @Sendable (String) -> Void
+    ) -> (process: Process, stderr: StderrTail)? {
         let process = makeProcess(args)
-        process.standardOutput = FileHandle.nullDevice
 
-        let tail = StderrTail()
-        let pipe = Pipe()
-        process.standardError = pipe
-        pipe.fileHandleForReading.readabilityHandler = { handle in
+        let outSplitter = LineSplitter(onLine: onLine)
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             if chunk.isEmpty {
                 handle.readabilityHandler = nil  // EOF
+                outSplitter.flush()
+            } else {
+                outSplitter.feed(chunk)
+            }
+        }
+
+        let tail = StderrTail()
+        let errSplitter = LineSplitter(onLine: onLine)
+        let errPipe = Pipe()
+        process.standardError = errPipe
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil  // EOF
+                errSplitter.flush()
             } else {
                 tail.append(chunk)
+                errSplitter.feed(chunk)
             }
         }
 
@@ -155,6 +177,44 @@ enum EdgeeCLI {
             return nil
         }
         return (process, tail)
+    }
+}
+
+/// Accumulates chunked pipe output and emits it one complete line at a time.
+/// A trailing partial line is held until more data (or `flush` at EOF) completes
+/// it, so a line is never split across two callbacks.
+final class LineSplitter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = Data()
+    private let onLine: @Sendable (String) -> Void
+
+    init(onLine: @escaping @Sendable (String) -> Void) { self.onLine = onLine }
+
+    func feed(_ chunk: Data) {
+        var completed: [String] = []
+        lock.lock()
+        buffer.append(chunk)
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let lineData = buffer[buffer.startIndex..<newline]
+            buffer.removeSubrange(buffer.startIndex...newline)
+            completed.append(String(decoding: lineData, as: UTF8.self))
+        }
+        lock.unlock()
+        for line in completed { emit(line) }
+    }
+
+    func flush() {
+        lock.lock()
+        let remainder = buffer
+        buffer.removeAll()
+        lock.unlock()
+        guard !remainder.isEmpty else { return }
+        emit(String(decoding: remainder, as: UTF8.self))
+    }
+
+    private func emit(_ line: String) {
+        let trimmed = line.hasSuffix("\r") ? String(line.dropLast()) : line
+        onLine(trimmed)
     }
 }
 

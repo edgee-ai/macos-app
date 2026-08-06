@@ -17,6 +17,13 @@ struct MenuContentView: View {
             Divider()
             RelaySection()
             Divider()
+            Button {
+                MainWindow.shared.show(model: model, relays: relays)
+            } label: {
+                Label("Open Edgee", systemImage: "macwindow")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
             footer
         }
         .padding(16)
