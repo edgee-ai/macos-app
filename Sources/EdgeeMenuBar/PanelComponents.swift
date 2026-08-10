@@ -223,7 +223,9 @@ struct AppTile: View {
         switch state {
         case .running: return "Stop \(target.name)"
         case .starting: return "Starting…"
-        default: return target.proxyOnly ? "Start relay for \(target.name)" : "Launch \(target.name)"
+        case .failed(let message): return "Failed: \(message)"
+        case .stopped:
+            return target.proxyOnly ? "Start relay for \(target.name)" : "Launch \(target.name)"
         }
     }
 }

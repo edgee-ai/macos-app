@@ -88,52 +88,32 @@ final class RelayManager: ObservableObject {
     /// this window and flip straight to `.failed` instead.
     private static let readyGrace: Duration = .milliseconds(1200)
 
-    /// Cap on retained log lines per target — enough to scroll back through a
-    /// session without growing unbounded over a long-lived relay.
-    private static let maxLogLines = 1000
-
     @Published private(set) var states: [String: RelayRunState] = [:]
-    /// Per-target live log lines (merged stdout+stderr), for the window's console.
-    @Published private(set) var logs: [String: [String]] = [:]
     private var processes: [String: Process] = [:]
     /// Ids we've asked to stop, so the termination handler can tell a
     /// user-requested shutdown from an unexpected exit/crash.
     private var stopping: Set<String> = []
 
+    private var terminationObserver: (any NSObjectProtocol)?
+
+    init() {
+        // Relays are detached background processes, so tear them down on every
+        // app-exit path (logout/shutdown, SIGTERM, ⌘Q) — not just the panel's Quit
+        // button, which only fires when the user clicks it.
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stopAll() }
+        }
+    }
+
+    deinit {
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+        }
+    }
+
     func state(_ id: String) -> RelayRunState { states[id] ?? .stopped }
-
-    func log(_ id: String) -> [String] { logs[id] ?? [] }
-
-    func clearLog(_ id: String) { logs[id] = [] }
-
-    private func appendLog(_ id: String, _ line: String) {
-        var lines = logs[id] ?? []
-        lines.append(line)
-        if lines.count > Self.maxLogLines {
-            lines.removeFirst(lines.count - Self.maxLogLines)
-        }
-        logs[id] = lines
-    }
-
-    /// Strip ANSI SGR color escapes so the relay's colored log output renders as
-    /// plain text in the console view.
-    nonisolated static func stripANSI(_ line: String) -> String {
-        guard line.contains("\u{1B}") else { return line }
-        let scalars = Array(line.unicodeScalars)
-        var result = String.UnicodeScalarView()
-        var i = 0
-        while i < scalars.count {
-            if scalars[i] == "\u{1B}", i + 1 < scalars.count, scalars[i + 1] == "[" {
-                i += 2
-                while i < scalars.count, scalars[i] != "m" { i += 1 }
-                i += 1  // consume the terminating 'm'
-            } else {
-                result.append(scalars[i])
-                i += 1
-            }
-        }
-        return String(result)
-    }
 
     func toggle(_ target: RelayTarget) {
         switch target.mode {
@@ -234,35 +214,31 @@ final class RelayManager: ObservableObject {
         guard processes[target.id] == nil else { return }
         states[target.id] = .starting
         stopping.remove(target.id)
-        logs[target.id] = []  // fresh log for this session
 
         var args = ["relay", target.id, "--non-interactive"]
         if target.proxyOnly { args.append("--no-launch") }
 
         let id = target.id
-        guard let spawned = EdgeeCLI.spawn(args, onLine: { [weak self] line in
-            let clean = RelayManager.stripANSI(line)
-            Task { @MainActor in self?.appendLog(id, clean) }
-        }) else {
-            states[target.id] = .failed("could not start edgee")
+        guard let spawned = EdgeeCLI.spawn(args) else {
+            states[id] = .failed("could not start edgee")
             return
         }
-        processes[target.id] = spawned.process
+        processes[id] = spawned.process
 
         spawned.process.terminationHandler = { [weak self] proc in
             let errText = spawned.stderr.text
             let status = proc.terminationStatus
             Task { @MainActor in
                 guard let self else { return }
-                self.processes[target.id] = nil
-                if self.stopping.remove(target.id) != nil {
-                    self.states[target.id] = .stopped
+                self.processes[id] = nil
+                if self.stopping.remove(id) != nil {
+                    self.states[id] = .stopped
                 } else {
                     // Exited on its own — surface the last stderr line as the cause.
                     let lastLine =
                         errText.split(whereSeparator: \.isNewline).last.map(String.init)
                         ?? "relay exited (code \(status))"
-                    self.states[target.id] = .failed(lastLine)
+                    self.states[id] = .failed(lastLine)
                 }
             }
         }
@@ -272,8 +248,8 @@ final class RelayManager: ObservableObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.readyGrace)
             guard let self else { return }
-            if self.processes[target.id] != nil, self.state(target.id) == .starting {
-                self.states[target.id] = .running
+            if self.processes[id] != nil, self.state(id) == .starting {
+                self.states[id] = .running
             }
         }
     }

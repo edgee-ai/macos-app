@@ -36,12 +36,7 @@ enum EdgeeCLI {
         let process = makeProcess(args)
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-        return true
+        return runReaped(process)
     }
 
     /// Spawn an arbitrary executable detached (augmented PATH, no pipes, no wait) —
@@ -58,9 +53,21 @@ enum EdgeeCLI {
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        return runReaped(process)
+    }
+
+    /// Retains a fire-and-forget process until it exits, then releases it, so the
+    /// child is reaped instead of left a zombie when the `Process` object would
+    /// otherwise deallocate right after `run()`.
+    private static let reaper = ProcessReaper()
+    @discardableResult
+    private static func runReaped(_ process: Process) -> Bool {
+        reaper.retain(process)
+        process.terminationHandler = { reaper.release($0) }
         do {
             try process.run()
         } catch {
+            reaper.release(process)
             return false
         }
         return true
@@ -110,7 +117,12 @@ enum EdgeeCLI {
     /// Headless browser login via `edgee auth login --non-interactive --json`.
     /// The subprocess opens the browser and blocks until the callback arrives.
     static func login() async -> LoginOutcome? {
-        await runJSON(["auth", "login", "--non-interactive", "--json"])
+        // Login blocks until the browser callback — or forever if the user abandons
+        // it — so use a cancellable, time-bounded capture that terminates the
+        // subprocess on timeout instead of pinning a concurrency-pool thread.
+        let data = await captureAsync(
+            ["auth", "login", "--non-interactive", "--json"], timeout: 300)
+        return data.flatMap { try? jsonDecoder.decode(LoginOutcome.self, from: $0) }
     }
 
     /// Switch the active profile via `edgee auth switch <name>`. Returns success.
@@ -170,47 +182,67 @@ enum EdgeeCLI {
         return data
     }
 
-    /// Spawn a long-running edgee subprocess (e.g. a relay) in the background —
-    /// no shell, no window. Both stdout and stderr are continuously drained and
-    /// split into lines delivered to `onLine`, so the child never blocks on a full
-    /// pipe (which would silently wedge the relay) and the app can render a live
-    /// log. stderr additionally feeds a bounded tail so the last error line is
-    /// available as the failure cause. Returns the process and its stderr tail, or
-    /// nil if it couldn't be launched.
-    ///
-    /// `onLine` is invoked off the main thread on the pipe's I/O queue — hop to the
-    /// main actor before touching UI state.
-    static func spawn(
-        _ args: [String], onLine: @escaping @Sendable (String) -> Void
-    ) -> (process: Process, stderr: StderrTail)? {
+    /// Run edgee capturing stdout, cancellable and time-bounded. Used for `login`,
+    /// which blocks until the browser callback (or never, if abandoned); on timeout
+    /// or task cancellation the subprocess is terminated so it can't pin a thread.
+    /// Returns nil on failure, timeout, or non-zero exit.
+    private static func captureAsync(_ args: [String], timeout seconds: Double) async -> Data? {
+        let process = makeProcess(args)
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = FileHandle.nullDevice
+        let sink = DataSink()
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil } else { sink.append(chunk) }
+        }
+
+        return await withTaskGroup(of: Data?.self) { group in
+            group.addTask {
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
+                        process.terminationHandler = { proc in
+                            outPipe.fileHandleForReading.readabilityHandler = nil
+                            let rest = outPipe.fileHandleForReading.readDataToEndOfFile()
+                            if !rest.isEmpty { sink.append(rest) }
+                            cont.resume(returning: proc.terminationStatus == 0 ? sink.data : nil)
+                        }
+                        do { try process.run() } catch { cont.resume(returning: nil) }
+                    }
+                } onCancel: {
+                    if process.isRunning { process.terminate() }
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()
+            return result
+        }
+    }
+
+    /// Spawn a long-running edgee subprocess (e.g. a relay) in the background — no
+    /// shell, no window. Both pipes are drained continuously so the child can't
+    /// wedge on a full pipe; stdout is discarded and stderr feeds a bounded tail so
+    /// the last error line is available as the failure cause. Returns the process
+    /// and its stderr tail, or nil if it couldn't be launched.
+    static func spawn(_ args: [String]) -> (process: Process, stderr: StderrTail)? {
         let process = makeProcess(args)
 
-        let outSplitter = LineSplitter(onLine: onLine)
         let outPipe = Pipe()
         process.standardOutput = outPipe
         outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil  // EOF
-                outSplitter.flush()
-            } else {
-                outSplitter.feed(chunk)
-            }
+            if handle.availableData.isEmpty { handle.readabilityHandler = nil }  // drain & discard
         }
 
         let tail = StderrTail()
-        let errSplitter = LineSplitter(onLine: onLine)
         let errPipe = Pipe()
         process.standardError = errPipe
         errPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil  // EOF
-                errSplitter.flush()
-            } else {
-                tail.append(chunk)
-                errSplitter.feed(chunk)
-            }
+            if chunk.isEmpty { handle.readabilityHandler = nil } else { tail.append(chunk) }
         }
 
         do {
@@ -219,44 +251,6 @@ enum EdgeeCLI {
             return nil
         }
         return (process, tail)
-    }
-}
-
-/// Accumulates chunked pipe output and emits it one complete line at a time.
-/// A trailing partial line is held until more data (or `flush` at EOF) completes
-/// it, so a line is never split across two callbacks.
-final class LineSplitter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var buffer = Data()
-    private let onLine: @Sendable (String) -> Void
-
-    init(onLine: @escaping @Sendable (String) -> Void) { self.onLine = onLine }
-
-    func feed(_ chunk: Data) {
-        var completed: [String] = []
-        lock.lock()
-        buffer.append(chunk)
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let lineData = buffer[buffer.startIndex..<newline]
-            buffer.removeSubrange(buffer.startIndex...newline)
-            completed.append(String(decoding: lineData, as: UTF8.self))
-        }
-        lock.unlock()
-        for line in completed { emit(line) }
-    }
-
-    func flush() {
-        lock.lock()
-        let remainder = buffer
-        buffer.removeAll()
-        lock.unlock()
-        guard !remainder.isEmpty else { return }
-        emit(String(decoding: remainder, as: UTF8.self))
-    }
-
-    private func emit(_ line: String) {
-        let trimmed = line.hasSuffix("\r") ? String(line.dropLast()) : line
-        onLine(trimmed)
     }
 }
 
@@ -278,5 +272,38 @@ final class StderrTail: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+/// Thread-safe accumulator for a subprocess's full stdout.
+final class DataSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = Data()
+    func append(_ chunk: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        buffer.append(chunk)
+    }
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer
+    }
+}
+
+/// Retains fire-and-forget `Process` objects until they exit, so the child is
+/// reaped rather than left a zombie when the object would deallocate after `run()`.
+final class ProcessReaper: @unchecked Sendable {
+    private let lock = NSLock()
+    private var live = Set<Process>()
+    func retain(_ process: Process) {
+        lock.lock()
+        defer { lock.unlock() }
+        live.insert(process)
+    }
+    func release(_ process: Process) {
+        lock.lock()
+        defer { lock.unlock() }
+        live.remove(process)
     }
 }
