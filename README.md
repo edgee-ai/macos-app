@@ -4,6 +4,11 @@ A native macOS menubar app (SwiftUI `MenuBarExtra`) that surfaces Edgee stats
 and launches agents/relay. It shells out to the `edgee` CLI and reads Edgee's
 local files, so the Rust CLI stays the single source of truth.
 
+The CLI itself lives in a separate repo ([edgee-ai/edgee](https://github.com/edgee-ai/edgee));
+this app does not link it — it drives it as a subprocess and consumes its
+`--json` output. `make bundle` embeds whichever `edgee` binary `EDGEE_BIN`
+resolves to (the one on your `PATH` by default).
+
 ## Requirements
 
 - macOS 14+
