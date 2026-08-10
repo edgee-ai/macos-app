@@ -161,9 +161,9 @@ final class RelayManager: ObservableObject {
     private func openInTerminal(_ id: String) {
         guard let edgee = EdgeeCLI.binaryPath else { return }
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        // One argv element for the shell: `exec 'edgee' launch <id>`. Passed as a
-        // single -c argument, so quoting the path handles spaces in the bundle path.
-        let command = "exec '\(edgee)' launch \(id)"
+        // One argv element for the shell. `cd "$HOME"` first because a GUI-launched
+        // app inherits CWD `/`, so the agent would otherwise start at the root.
+        let command = "cd \"$HOME\" && exec '\(edgee)' launch \(id)"
         let runInShell = [shell, "-lc", command]
 
         if let term = Self.resolveTerminal(),
@@ -217,7 +217,7 @@ final class RelayManager: ObservableObject {
     /// Fallback: write a `.command` script and open it via LaunchServices (routes
     /// to the default shell-script handler, usually Terminal.app).
     private func openViaCommandFile(edgee: String, id: String) {
-        let script = "#!/bin/sh\n'\(edgee)' launch \(id)\n"
+        let script = "#!/bin/sh\ncd \"$HOME\"\nexec '\(edgee)' launch \(id)\n"
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("edgee-launch-\(id).command")
         do {
