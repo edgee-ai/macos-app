@@ -10,7 +10,7 @@ import SwiftUI
 extension View {
     /// A white card floating on the lilac panel: hairline border, soft shadow.
     func cardSurface(radius: CGFloat = 15) -> some View {
-        background(Color.white, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+        background(Theme.cardFill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(Theme.cardBorder, lineWidth: 1))
@@ -81,11 +81,11 @@ struct TokensCard: View {
             SectionLabel("Tokens")
             HStack(alignment: .center, spacing: 18) {
                 half(
-                    icon: "arrow.up", iconBg: Color(hex: 0xF4F0FB), tint: Theme.brand,
-                    value: inValue, sub: inSub, subColor: Theme.brand, subBold: true)
+                    icon: "arrow.up", iconBg: Theme.tokenInBg, tint: Theme.tokenInTint,
+                    value: inValue, sub: inSub, subColor: Theme.tokenInSub, subBold: true)
                 Rectangle().fill(Theme.divider).frame(width: 1, height: 34)
                 half(
-                    icon: "arrow.down", iconBg: Color(hex: 0xF0F1FB), tint: Theme.indigo,
+                    icon: "arrow.down", iconBg: Theme.tokenOutBg, tint: Theme.tokenOutTint,
                     value: outValue, sub: outSub, subColor: Theme.secondaryText, subBold: false)
             }
             .padding(.top, 14)
@@ -188,7 +188,7 @@ struct AppTile: View {
             .background(Theme.tileBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.cardBorder, lineWidth: 1))
+                    .strokeBorder(Theme.tileBorder, lineWidth: 1))
             .overlay(alignment: .topTrailing) { statusDot.padding(8) }
             .opacity(target.installed ? 1 : 0.45)
         }
@@ -337,8 +337,8 @@ struct AccountPill: View {
             .padding(.leading, 5)
             .padding(.trailing, 10)
             .padding(.vertical, 4)
-            .background(Color.white.opacity(0.8), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color(hex: 0xE2E0EE), lineWidth: 1))
+            .background(Theme.pillBg, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.pillBorder, lineWidth: 1))
             .frame(maxWidth: 215)
     }
 

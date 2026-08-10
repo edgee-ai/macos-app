@@ -9,6 +9,13 @@ struct MenuContentView: View {
     @EnvironmentObject private var model: MenuModel
     @EnvironmentObject private var relays: RelayManager
 
+    @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
+    @Environment(\.colorScheme) private var systemScheme
+
+    private var appearance: Appearance { Appearance(rawValue: appearanceRaw) ?? .system }
+    /// The scheme the panel actually renders in (explicit choice, else the OS's).
+    private var resolvedScheme: ColorScheme { appearance.colorScheme ?? systemScheme }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header.padding(.bottom, 6)
@@ -27,14 +34,16 @@ struct MenuContentView: View {
                     colors: [Theme.panelTop, Theme.panelBottom],
                     startPoint: .top, endPoint: .bottom)
                 RadialGradient(
-                    colors: [Theme.brand.opacity(0.22), .clear],
+                    colors: [Theme.brand.opacity(resolvedScheme == .dark ? 0.45 : 0.22), .clear],
                     center: .topLeading, startRadius: 0, endRadius: 190)
                 RadialGradient(
-                    colors: [Theme.indigo.opacity(0.18), .clear],
+                    colors: [Theme.indigo.opacity(resolvedScheme == .dark ? 0.40 : 0.18), .clear],
                     center: .topTrailing, startRadius: 0, endRadius: 190)
             }
             .ignoresSafeArea()
         }
+        .environment(\.colorScheme, resolvedScheme)
+        .preferredColorScheme(appearance.colorScheme)
         .task { await model.reload() }
     }
 
@@ -55,8 +64,26 @@ struct MenuContentView: View {
                 .font(Theme.serif(19))
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
+            appearanceButton
             AccountPill()
         }
+    }
+
+    /// Cycles the panel appearance: system → light → dark. The icon reflects the
+    /// current choice.
+    private var appearanceButton: some View {
+        Button {
+            appearanceRaw = appearance.next.rawValue
+        } label: {
+            Image(systemName: appearance.symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .frame(width: 26, height: 26)
+                .background(Theme.pillBg, in: Circle())
+                .overlay(Circle().strokeBorder(Theme.pillBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help("Appearance: \(appearance.label) — click to change")
     }
 
     // MARK: Stats
@@ -82,7 +109,7 @@ struct MenuContentView: View {
     private var tokens: some View {
         TokensCard(
             inValue: tokenValue(\.inputTokens),
-            inSub: compressionSub,
+            inSub: cachedSub,
             outValue: tokenValue(\.outputTokens),
             outSub: "generated")
     }
@@ -151,8 +178,8 @@ struct MenuContentView: View {
         return TokenFormat.short(totals[keyPath: key])
     }
 
-    private var compressionSub: String? {
-        guard let pct = model.stats?.totals.compressionPct, pct > 0 else { return nil }
-        return "\(pct)% compressed"
+    private var cachedSub: String? {
+        guard let cached = model.stats?.totals.cachedInputTokens, cached > 0 else { return nil }
+        return "\(TokenFormat.short(cached)) cached"
     }
 }
