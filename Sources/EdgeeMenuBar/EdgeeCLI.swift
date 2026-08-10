@@ -24,6 +24,26 @@ enum EdgeeCLI {
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }()
 
+    /// Absolute path to the resolved edgee binary, if any — for building the
+    /// AppleScript/shell command used to launch interactive agents in Terminal.
+    static var binaryPath: String? { resolvedBinary }
+
+    /// Fire-and-forget launch: spawn `edgee <args>` detached, no pipes, no wait.
+    /// Used for one-shot launch targets (e.g. `launch codex-desktop`) where we
+    /// don't supervise a long-running process. Returns false on launch failure.
+    @discardableResult
+    static func launchDetached(_ args: [String]) -> Bool {
+        let process = makeProcess(args)
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        return true
+    }
+
     /// Directories prepended to `PATH` (and scanned for the binary).
     private static let searchDirs = [
         "\(NSHomeDirectory())/.local/bin",

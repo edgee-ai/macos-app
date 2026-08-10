@@ -163,7 +163,8 @@ struct LaunchGrid: View {
 }
 
 /// One app in the launch grid — real app icon when installed, SF Symbol otherwise,
-/// with a running/failed status dot in the corner.
+/// with a running/failed status dot in the corner. Every tile is the same size
+/// (`TileMetrics`) so single- and two-line names line up across the grid.
 struct AppTile: View {
     let target: RelayTarget
     let state: RelayRunState
@@ -178,13 +179,13 @@ struct AppTile: View {
                     .foregroundStyle(Theme.bodyText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: TileMetrics.labelHeight, alignment: .top)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 4)
             .padding(.top, 14)
             .padding(.bottom, 12)
-            .frame(minHeight: 72)
+            .frame(height: TileMetrics.height)
             .background(Theme.tileBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -229,6 +230,13 @@ struct AppTile: View {
     }
 }
 
+/// Shared launch-grid tile geometry, so every tile is identical in size.
+enum TileMetrics {
+    /// Two lines of the 10pt label — reserved on every tile so icons align.
+    static let labelHeight: CGFloat = 26
+    static let height: CGFloat = 84
+}
+
 /// The dashed "Add app" affordance — opens the full window where targets live.
 struct AddAppTile: View {
     let action: () -> Void
@@ -242,11 +250,12 @@ struct AddAppTile: View {
                 Text("Add app")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.labelMuted)
+                    .frame(maxWidth: .infinity, minHeight: TileMetrics.labelHeight, alignment: .top)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 14)
             .padding(.bottom, 12)
-            .frame(minHeight: 72)
+            .frame(height: TileMetrics.height)
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(

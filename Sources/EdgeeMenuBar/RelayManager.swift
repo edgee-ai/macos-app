@@ -1,17 +1,29 @@
 import Foundation
 
-/// A relay/launch target the menubar can drive via `edgee relay <id>`.
+/// How a target is driven from the tray.
+enum LaunchMode {
+    /// Supervised, headless `edgee relay <id>` — GUI apps that talk to the relay.
+    case relay
+    /// One-shot `edgee launch <id>` — a GUI app launcher (e.g. codex-desktop).
+    case launch
+    /// Interactive `edgee launch <id>` opened in Terminal — TUI coding agents.
+    case terminalAgent
+}
+
+/// A relay/launch target the menubar can drive via the `edgee` CLI.
 struct RelayTarget: Identifiable {
-    /// The `edgee relay` argument (also the id).
+    /// The `edgee relay`/`edgee launch` argument (also the id).
     let id: String
     let name: String
     /// SF Symbol shown next to the row.
     let symbol: String
     /// Proxy-only (`--no-launch`) — for external clients like Claude Desktop.
-    /// When false, the relay also launches the app.
+    /// When false, the relay also launches the app. (relay mode only.)
     let proxyOnly: Bool
     /// App bundle paths used to detect installation. Empty = always available.
     let detectPaths: [String]
+    /// How tapping the tile drives this target.
+    let mode: LaunchMode
 
     var installed: Bool {
         if detectPaths.isEmpty { return true }
@@ -36,13 +48,22 @@ struct RelayTarget: Identifiable {
     static let all: [RelayTarget] = [
         RelayTarget(
             id: "cursor", name: "Cursor", symbol: "cursorarrow.rays",
-            proxyOnly: false, detectPaths: appPaths("Cursor.app")),
+            proxyOnly: false, detectPaths: appPaths("Cursor.app"), mode: .relay),
         RelayTarget(
             id: "copilot-vscode", name: "VS Code (Copilot)", symbol: "chevron.left.forwardslash.chevron.right",
-            proxyOnly: false, detectPaths: appPaths("Visual Studio Code.app")),
+            proxyOnly: false, detectPaths: appPaths("Visual Studio Code.app"), mode: .relay),
         RelayTarget(
             id: "claude-desktop", name: "Claude Desktop", symbol: "network",
-            proxyOnly: false, detectPaths: appPaths("Claude.app")),
+            proxyOnly: false, detectPaths: appPaths("Claude.app"), mode: .relay),
+        RelayTarget(
+            id: "codex-desktop", name: "Codex Desktop", symbol: "sparkles",
+            proxyOnly: false, detectPaths: appPaths("ChatGPT.app"), mode: .launch),
+        RelayTarget(
+            id: "codex", name: "Codex", symbol: "terminal",
+            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
+        RelayTarget(
+            id: "opencode", name: "OpenCode", symbol: "curlybraces",
+            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
     ]
 }
 
@@ -111,12 +132,37 @@ final class RelayManager: ObservableObject {
     }
 
     func toggle(_ target: RelayTarget) {
-        switch state(target.id) {
-        case .running, .starting:
-            stop(target.id)
-        case .stopped, .failed:
-            start(target)
+        switch target.mode {
+        case .relay:
+            switch state(target.id) {
+            case .running, .starting: stop(target.id)
+            case .stopped, .failed: start(target)
+            }
+        case .launch:
+            EdgeeCLI.launchDetached(["launch", target.id])
+        case .terminalAgent:
+            openInTerminal(target.id)
         }
+    }
+
+    /// Open Terminal and run `edgee launch <id>` — interactive coding agents need
+    /// a TTY, so they can't run headless like the relay targets do.
+    private func openInTerminal(_ id: String) {
+        guard let bin = EdgeeCLI.binaryPath else { return }
+        // Single-quote the path for the shell (handles spaces); the command has no
+        // characters needing AppleScript escaping, but guard anyway.
+        let command = "'\(bin)' launch \(id)"
+        let escaped =
+            command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = """
+            tell application "Terminal"
+                activate
+                do script "\(escaped)"
+            end tell
+            """
+        NSAppleScript(source: source)?.executeAndReturnError(nil)
     }
 
     func start(_ target: RelayTarget) {

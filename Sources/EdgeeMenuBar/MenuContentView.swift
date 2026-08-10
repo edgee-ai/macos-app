@@ -64,8 +64,8 @@ struct MenuContentView: View {
                 .font(Theme.serif(19))
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
-            appearanceButton
             AccountPill()
+            appearanceButton
         }
     }
 
