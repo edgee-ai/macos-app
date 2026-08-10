@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// How a target is driven from the tray.
@@ -148,24 +149,26 @@ final class RelayManager: ObservableObject {
         }
     }
 
-    /// Open Terminal and run `edgee launch <id>` — interactive coding agents need
-    /// a TTY, so they can't run headless like the relay targets do.
+    /// Run `edgee launch <id>` in the user's terminal — interactive coding agents
+    /// need a TTY, so they can't run headless like the relay targets do. We write
+    /// a `.command` script and open it via LaunchServices, which routes to whatever
+    /// app is the default handler for shell scripts (Terminal, iTerm, Ghostty, …)
+    /// instead of hardcoding Terminal.app. It runs in a normal login shell, so the
+    /// user's own `PATH` applies.
     private func openInTerminal(_ id: String) {
         guard let bin = EdgeeCLI.binaryPath else { return }
-        // Single-quote the path for the shell (handles spaces); the command has no
-        // characters needing AppleScript escaping, but guard anyway.
-        let command = "'\(bin)' launch \(id)"
-        let escaped =
-            command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = """
-            tell application "Terminal"
-                activate
-                do script "\(escaped)"
-            end tell
-            """
-        NSAppleScript(source: source)?.executeAndReturnError(nil)
+        // `id` is a fixed target name; single-quote the path so spaces are safe.
+        let script = "#!/bin/sh\n'\(bin)' launch \(id)\n"
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("edgee-launch-\(id).command")
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: url.path)
+        } catch {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     func start(_ target: RelayTarget) {
