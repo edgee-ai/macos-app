@@ -150,15 +150,74 @@ final class RelayManager: ObservableObject {
     }
 
     /// Run `edgee launch <id>` in the user's terminal — interactive coding agents
-    /// need a TTY, so they can't run headless like the relay targets do. We write
-    /// a `.command` script and open it via LaunchServices, which routes to whatever
-    /// app is the default handler for shell scripts (Terminal, iTerm, Ghostty, …)
-    /// instead of hardcoding Terminal.app. It runs in a normal login shell, so the
-    /// user's own `PATH` applies.
+    /// need a TTY, so they can't run headless like the relay targets do.
+    ///
+    /// We first look for an installed terminal emulator we know how to drive from
+    /// the CLI (kitty, Ghostty, WezTerm, Alacritty) and launch it directly on the
+    /// agent command. If none is found we fall back to opening a `.command` script
+    /// via LaunchServices — i.e. whatever app is the default handler for shell
+    /// scripts (typically Terminal.app). Either way the command runs through a
+    /// login shell so the user's real `PATH` (nix, homebrew, …) applies.
     private func openInTerminal(_ id: String) {
-        guard let bin = EdgeeCLI.binaryPath else { return }
-        // `id` is a fixed target name; single-quote the path so spaces are safe.
-        let script = "#!/bin/sh\n'\(bin)' launch \(id)\n"
+        guard let edgee = EdgeeCLI.binaryPath else { return }
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        // One argv element for the shell: `exec 'edgee' launch <id>`. Passed as a
+        // single -c argument, so quoting the path handles spaces in the bundle path.
+        let command = "exec '\(edgee)' launch \(id)"
+        let runInShell = [shell, "-lc", command]
+
+        if let term = Self.resolveTerminal(),
+            EdgeeCLI.spawnDetached(executable: term.bin, arguments: term.prefix + runInShell)
+        {
+            return
+        }
+        openViaCommandFile(edgee: edgee, id: id)
+    }
+
+    /// A terminal emulator binary plus the argv prefix that makes it run a program.
+    private struct TerminalSpec {
+        let bin: String
+        let prefix: [String]
+    }
+
+    /// First installed terminal we know how to launch a command in. `nil` → none,
+    /// so the caller falls back to the LaunchServices `.command` handler.
+    private static func resolveTerminal() -> TerminalSpec? {
+        let home = NSHomeDirectory()
+        let dirs = [
+            "\(home)/.nix-profile/bin",
+            "/run/current-system/sw/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "\(home)/.local/bin",
+            "/usr/bin",
+        ]
+        // (cli name, .app name, argv prefix before the program to run)
+        let candidates: [(name: String, app: String, prefix: [String])] = [
+            ("ghostty", "Ghostty", ["-e"]),
+            ("kitty", "kitty", ["--detach"]),
+            ("wezterm", "WezTerm", ["start", "--"]),
+            ("alacritty", "Alacritty", ["-e"]),
+        ]
+        let fm = FileManager.default
+        for c in candidates {
+            let paths =
+                dirs.map { "\($0)/\(c.name)" } + [
+                    "/Applications/\(c.app).app/Contents/MacOS/\(c.name)",
+                    "\(home)/Applications/\(c.app).app/Contents/MacOS/\(c.name)",
+                    "\(home)/Applications/Home Manager Apps/\(c.app).app/Contents/MacOS/\(c.name)",
+                ]
+            if let bin = paths.first(where: { fm.isExecutableFile(atPath: $0) }) {
+                return TerminalSpec(bin: bin, prefix: c.prefix)
+            }
+        }
+        return nil
+    }
+
+    /// Fallback: write a `.command` script and open it via LaunchServices (routes
+    /// to the default shell-script handler, usually Terminal.app).
+    private func openViaCommandFile(edgee: String, id: String) {
+        let script = "#!/bin/sh\n'\(edgee)' launch \(id)\n"
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("edgee-launch-\(id).command")
         do {

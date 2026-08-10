@@ -44,6 +44,28 @@ enum EdgeeCLI {
         return true
     }
 
+    /// Spawn an arbitrary executable detached (augmented PATH, no pipes, no wait) —
+    /// used to open a terminal emulator on the agent command. Returns false on
+    /// launch failure so the caller can fall back.
+    @discardableResult
+    static func spawnDetached(executable: String, arguments: [String]) -> Bool {
+        let process = Process()
+        var environment = ProcessInfo.processInfo.environment
+        let existingPath = environment["PATH"] ?? ""
+        environment["PATH"] = (searchDirs + [existingPath]).joined(separator: ":")
+        process.environment = environment
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        return true
+    }
+
     /// Directories prepended to `PATH` (and scanned for the binary).
     private static let searchDirs = [
         "\(NSHomeDirectory())/.local/bin",
