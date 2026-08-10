@@ -47,20 +47,23 @@ struct RelayTarget: Identifiable {
     /// proxy-only entry is for pointing an external app (Claude Desktop) at it.
     static let all: [RelayTarget] = [
         RelayTarget(
+            id: "claude", name: "Claude Code", symbol: "asterisk.circle",
+            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
+        RelayTarget(
+            id: "claude-desktop", name: "Claude Desktop", symbol: "network",
+            proxyOnly: false, detectPaths: appPaths("Claude.app"), mode: .relay),
+        RelayTarget(
+            id: "codex", name: "Codex", symbol: "terminal",
+            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
+        RelayTarget(
+            id: "codex-desktop", name: "Codex Desktop", symbol: "sparkles",
+            proxyOnly: false, detectPaths: appPaths("ChatGPT.app"), mode: .launch),
+        RelayTarget(
             id: "cursor", name: "Cursor", symbol: "cursorarrow.rays",
             proxyOnly: false, detectPaths: appPaths("Cursor.app"), mode: .relay),
         RelayTarget(
             id: "copilot-vscode", name: "VS Code (Copilot)", symbol: "chevron.left.forwardslash.chevron.right",
             proxyOnly: false, detectPaths: appPaths("Visual Studio Code.app"), mode: .relay),
-        RelayTarget(
-            id: "claude-desktop", name: "Claude Desktop", symbol: "network",
-            proxyOnly: false, detectPaths: appPaths("Claude.app"), mode: .relay),
-        RelayTarget(
-            id: "codex-desktop", name: "Codex Desktop", symbol: "sparkles",
-            proxyOnly: false, detectPaths: appPaths("ChatGPT.app"), mode: .launch),
-        RelayTarget(
-            id: "codex", name: "Codex", symbol: "terminal",
-            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
         RelayTarget(
             id: "opencode", name: "OpenCode", symbol: "curlybraces",
             proxyOnly: false, detectPaths: [], mode: .terminalAgent),
