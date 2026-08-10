@@ -124,10 +124,9 @@ struct TokensCard: View {
 
 // MARK: - Launch grid
 
-/// The "Launch & relay" card: a 4-up grid of app tiles plus an "Add app" slot.
+/// The "Launch & relay" card: a 4-up grid of app tiles.
 struct LaunchGrid: View {
     @EnvironmentObject private var relays: RelayManager
-    let onAddApp: () -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 9), count: 4)
 
@@ -152,7 +151,6 @@ struct LaunchGrid: View {
                         relays.toggle(target)
                     }
                 }
-                AddAppTile(action: onAddApp)
             }
         }
         .padding(.horizontal, 14)
@@ -235,36 +233,6 @@ enum TileMetrics {
     /// Two lines of the 10pt label — reserved on every tile so icons align.
     static let labelHeight: CGFloat = 26
     static let height: CGFloat = 84
-}
-
-/// The dashed "Add app" affordance — opens the full window where targets live.
-struct AddAppTile: View {
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 9) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Theme.secondaryText)
-                    .frame(height: 23)
-                Text("Add app")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.labelMuted)
-                    .frame(maxWidth: .infinity, minHeight: TileMetrics.labelHeight, alignment: .top)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-            .frame(height: TileMetrics.height)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        Theme.secondaryText.opacity(0.4),
-                        style: StrokeStyle(lineWidth: 1, dash: [4])))
-        }
-        .buttonStyle(.plain)
-        .help("Manage launch & relay targets")
-    }
 }
 
 // MARK: - Account pill

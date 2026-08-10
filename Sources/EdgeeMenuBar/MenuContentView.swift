@@ -22,7 +22,7 @@ struct MenuContentView: View {
             lastHour
             statTiles
             tokens
-            LaunchGrid { MainWindow.shared.show(model: model, relays: relays) }
+            LaunchGrid()
             openConsole
             footer.padding(.top, 2)
         }
@@ -138,7 +138,6 @@ struct MenuContentView: View {
 
     private var footer: some View {
         HStack {
-            Button("Settings") { MainWindow.shared.show(model: model, relays: relays) }
             Spacer()
             Button {
                 relays.stopAll()
