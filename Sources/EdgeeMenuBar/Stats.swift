@@ -12,6 +12,7 @@ struct Stats: Codable {
         let errors: UInt64
         let inputTokens: UInt64
         let outputTokens: UInt64
+        let cachedInputTokens: UInt64
         let tokenCostSavings: UInt64
         let uncompressedToolsTokens: UInt64
         let compressedToolsTokens: UInt64
