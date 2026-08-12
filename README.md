@@ -39,6 +39,11 @@ Once a release is published, end users install via the tap:
 brew install --cask --no-quarantine edgee-ai/tap/edgee-menubar
 ```
 
+This installs `Edgee.app` **and** puts the bundled `edgee` CLI on your `PATH`
+(symlinked into the Homebrew prefix's `bin`), so the app and the command line
+tool always stay in lockstep. It therefore conflicts with the standalone `edgee`
+formula — install one or the other (`brew unlink edgee` first if needed).
+
 `--no-quarantine` is required because the app is **ad-hoc signed, not yet
 notarized** by Apple — otherwise Gatekeeper blocks a downloaded build. (Dropping
 the flag becomes possible once we ship a notarized, Developer-ID-signed build.)
