@@ -90,7 +90,7 @@ struct MenuContentView: View {
 
     private var lastHour: some View {
         HStack(alignment: .firstTextBaseline) {
-            SectionLabel("Last hour")
+            SectionLabel(windowLabel)
             Spacer()
             Text(sessionsLabel)
                 .font(.system(size: 11.5))
@@ -100,9 +100,10 @@ struct MenuContentView: View {
     }
 
     private var statTiles: some View {
-        HStack(spacing: 12) {
+        let active = activeTile
+        return HStack(spacing: 12) {
             StatTile(label: "Requests", value: requestsValue)
-            StatTile(label: "Active relays", value: "\(runningCount)", dot: runningCount > 0 ? Theme.running : nil)
+            StatTile(label: active.label, value: active.value, dot: active.on ? Theme.running : nil)
         }
     }
 
@@ -160,6 +161,34 @@ struct MenuContentView: View {
 
     private var runningCount: Int {
         RelayTarget.all.filter { relays.state($0.id) == .running }.count
+    }
+
+    /// Section label reflecting where the stats came from: the API's time window
+    /// when logged in, or all-time local logs otherwise (so "Last hour" is never
+    /// a lie).
+    private var windowLabel: String {
+        guard model.stats?.source == "api", let window = model.stats?.window else {
+            return "All sessions"
+        }
+        switch window {
+        case "1h": return "Last hour"
+        case "3h": return "Last 3 hours"
+        case "6h": return "Last 6 hours"
+        case "24h": return "Last 24 hours"
+        case "7d": return "Last 7 days"
+        case "30d": return "Last 30 days"
+        default: return "Last \(window)"
+        }
+    }
+
+    /// The second KPI tile: real online-session count from the API when available,
+    /// otherwise the local count of running relays.
+    private var activeTile: (label: String, value: String, on: Bool) {
+        if let active = model.stats?.activeSessions {
+            return ("Active sessions", "\(active)", active > 0)
+        }
+        let n = runningCount
+        return ("Active relays", "\(n)", n > 0)
     }
 
     private var sessionsLabel: String {

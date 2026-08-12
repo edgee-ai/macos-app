@@ -104,8 +104,16 @@ enum EdgeeCLI {
     static func authStatus() async -> AuthStatus? { await runJSON(["auth", "status", "--json"]) }
 
     /// Aggregated stats via `edgee stats --json`.
-    static func stats(limit: Int = 20) async -> Stats? {
-        await runJSON(["stats", "--json", "--limit", "\(limit)"])
+    static func stats(period: String = "1h", limit: Int = 20) async -> Stats? {
+        // `--period` drives the API window when logged in; ignored (all-time local
+        // logs) when logged out. The panel labels itself from the response's source.
+        if let stats: Stats = await runJSON([
+            "stats", "--json", "--period", period, "--limit", "\(limit)",
+        ]) {
+            return stats
+        }
+        // Older edgee (no `--period`) rejects the flag — fall back to a plain call.
+        return await runJSON(["stats", "--json", "--limit", "\(limit)"])
     }
 
     /// Configured profiles via `edgee auth list --json`.

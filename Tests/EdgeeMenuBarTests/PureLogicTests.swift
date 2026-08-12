@@ -150,6 +150,28 @@ final class PureLogicTests: XCTestCase {
         XCTAssertTrue(stats.recent.isEmpty)
     }
 
+    func testStatsDecodingApiSource() throws {
+        // The API-sourced shape carries source/window/active_sessions.
+        let json = """
+            {"source":"api","window":"1h","sessions":12,"active_sessions":2,
+            "totals":{"requests":241,"errors":3,"input_tokens":189000,
+            "output_tokens":34000,"cached_input_tokens":3300000,"token_cost_savings":42,
+            "uncompressed_tools_tokens":100,"compressed_tools_tokens":60,"compression_pct":40},
+            "recent":[]}
+            """
+        let stats = try decoder().decode(Stats.self, from: Data(json.utf8))
+        XCTAssertEqual(stats.source, "api")
+        XCTAssertEqual(stats.window, "1h")
+        XCTAssertEqual(stats.activeSessions, 2)
+        XCTAssertEqual(stats.totals.cachedInputTokens, 3_300_000)
+        // Local-shaped JSON (no source/window/active_sessions) leaves them nil.
+        let local = try decoder().decode(
+            Stats.self,
+            from: Data(#"{"sessions":1,"recent":[],"totals":{"requests":1,"errors":0,"input_tokens":0,"output_tokens":0,"token_cost_savings":0,"uncompressed_tools_tokens":0,"compressed_tools_tokens":0}}"#.utf8))
+        XCTAssertNil(local.source)
+        XCTAssertNil(local.activeSessions)
+    }
+
     func testAuthStatusDecoding() throws {
         let json = """
             {
