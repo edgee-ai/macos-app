@@ -270,6 +270,7 @@ struct AccountPill: View {
                 }
                 Divider()
                 Button("Refresh") { Task { await model.reload() } }
+                Button("Log out", role: .destructive) { Task { await model.logout() } }
             } label: {
                 pill {
                     label(

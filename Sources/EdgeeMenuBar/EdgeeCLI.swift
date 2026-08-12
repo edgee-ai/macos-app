@@ -149,6 +149,14 @@ enum EdgeeCLI {
         }.value
     }
 
+    /// Clear the active profile's credentials via `edgee auth logout`.
+    @discardableResult
+    static func logout() async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            capture(["auth", "logout"]) != nil
+        }.value
+    }
+
     /// Configure a `Process` to invoke edgee with an augmented PATH (so edgee and
     /// any editors it launches resolve), without running it.
     private static func makeProcess(_ args: [String]) -> Process {

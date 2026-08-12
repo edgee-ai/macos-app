@@ -53,4 +53,11 @@ final class MenuModel: ObservableObject {
         switching = false
         await reload()
     }
+
+    func logout() async {
+        switching = true
+        await EdgeeCLI.logout()
+        switching = false
+        await reload()
+    }
 }
