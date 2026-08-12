@@ -45,10 +45,7 @@ enum EdgeeCLI {
     @discardableResult
     static func spawnDetached(executable: String, arguments: [String]) -> Bool {
         let process = Process()
-        var environment = ProcessInfo.processInfo.environment
-        let existingPath = environment["PATH"] ?? ""
-        environment["PATH"] = (searchDirs + [existingPath]).joined(separator: ":")
-        process.environment = environment
+        process.environment = childEnvironment()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
@@ -81,6 +78,22 @@ enum EdgeeCLI {
         "/usr/bin",
         "/bin",
     ]
+
+    /// Environment for spawned processes: the app's env with an augmented `PATH`
+    /// and the parent's Claude Code session markers stripped. An agent launched
+    /// from the tray is a fresh top-level session, so it must not inherit
+    /// `CLAUDE_CODE_CHILD_SESSION` (which silences the agent's own transcript
+    /// saving) or the other `CLAUDE_CODE_*` markers of whatever launched the app.
+    private static func childEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let existingPath = environment["PATH"] ?? ""
+        environment["PATH"] = (searchDirs + [existingPath]).joined(separator: ":")
+        for key in Array(environment.keys)
+        where key == "CLAUDECODE" || key.hasPrefix("CLAUDE_CODE_") {
+            environment.removeValue(forKey: key)
+        }
+        return environment
+    }
 
     /// Decoder for every `--json` command. `.convertFromSnakeCase` maps the CLI's
     /// snake_case fields onto our camelCase models, so the model structs need no
@@ -161,11 +174,7 @@ enum EdgeeCLI {
     /// any editors it launches resolve), without running it.
     private static func makeProcess(_ args: [String]) -> Process {
         let process = Process()
-
-        var environment = ProcessInfo.processInfo.environment
-        let existingPath = environment["PATH"] ?? ""
-        environment["PATH"] = (searchDirs + [existingPath]).joined(separator: ":")
-        process.environment = environment
+        process.environment = childEnvironment()
 
         if let bin = resolvedBinary {
             process.executableURL = URL(fileURLWithPath: bin)
