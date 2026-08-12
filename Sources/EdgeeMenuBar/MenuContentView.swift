@@ -19,16 +19,18 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header.padding(.bottom, 6)
-            if isLoggedIn {
+            if model.status == nil && model.loading {
+                loadingView
+            } else if !isLoggedIn {
+                loggedOutView
+            } else if needsOrg {
+                orgPickerView
+            } else {
                 lastHour
                 statTiles
                 tokens
                 LaunchGrid()
                 openConsole
-            } else if model.status == nil && model.loading {
-                loadingView
-            } else {
-                loggedOutView
             }
             footer.padding(.top, 2)
         }
@@ -54,6 +56,10 @@ struct MenuContentView: View {
     }
 
     private var isLoggedIn: Bool { model.status?.loggedIn == true }
+
+    /// Logged in but no org chosen yet (multi-org accounts land here after login,
+    /// since the CLI doesn't auto-pick). The dashboard needs an org, so gate it.
+    private var needsOrg: Bool { isLoggedIn && (model.status?.orgSlug?.isEmpty ?? true) }
 
     // MARK: Logged-out / loading
 
@@ -107,6 +113,53 @@ struct MenuContentView: View {
         .padding(.top, 24)
         .padding(.bottom, 18)
         .padding(.horizontal, 10)
+    }
+
+    // MARK: Org selection
+
+    /// Initial org picker for multi-org accounts (post-login, before an org is
+    /// set). Switching between orgs later happens in the account pill.
+    private var orgPickerView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel("Choose an organization")
+            if model.orgs.isEmpty {
+                Text("No organizations found. Create one in the console to continue.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                openConsole
+            } else {
+                ForEach(model.orgs) { org in
+                    Button { Task { await model.switchOrg(org.slug) } } label: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(org.name)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.ink)
+                                Text(org.slug)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.secondaryText)
+                            }
+                            Spacer()
+                            if model.switching {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Theme.secondaryText)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .cardSurface(radius: 12)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.switching)
+                }
+            }
+        }
+        .padding(.top, 2)
     }
 
     // MARK: Header
