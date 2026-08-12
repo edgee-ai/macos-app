@@ -12,7 +12,10 @@ struct Stats: Codable {
         let errors: UInt64
         let inputTokens: UInt64
         let outputTokens: UInt64
-        let cachedInputTokens: UInt64
+        // Optional so `stats --json` from an older edgee (pre-`cached_input_tokens`)
+        // still decodes instead of nil-ing the whole struct — the UI just hides
+        // the "cached" sub-line when it's absent.
+        let cachedInputTokens: UInt64?
         let tokenCostSavings: UInt64
         let uncompressedToolsTokens: UInt64
         let compressedToolsTokens: UInt64

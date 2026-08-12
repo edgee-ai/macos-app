@@ -134,16 +134,19 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.recent.first?.logsUrl, "https://example.com/s1")
     }
 
-    func testStatsDecodingWithoutOptionalCompression() throws {
-        // `compression_pct` is omitted by the CLI when there's nothing to report.
+    func testStatsDecodingWithoutOptionalFields() throws {
+        // `compression_pct` is omitted when there's nothing to report, and an
+        // older edgee (pre-#182) omits `cached_input_tokens` entirely — both must
+        // still decode rather than nil-ing the whole struct.
         let json = """
             {"sessions":0,"totals":{"requests":0,"errors":0,"input_tokens":0,
-            "output_tokens":0,"cached_input_tokens":0,"token_cost_savings":0,
+            "output_tokens":0,"token_cost_savings":0,
             "uncompressed_tools_tokens":0,"compressed_tools_tokens":0},"recent":[]}
             """
         let stats = try decoder().decode(Stats.self, from: Data(json.utf8))
         XCTAssertEqual(stats.sessions, 0)
         XCTAssertNil(stats.totals.compressionPct)
+        XCTAssertNil(stats.totals.cachedInputTokens)
         XCTAssertTrue(stats.recent.isEmpty)
     }
 
