@@ -19,11 +19,17 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header.padding(.bottom, 6)
-            lastHour
-            statTiles
-            tokens
-            LaunchGrid()
-            openConsole
+            if isLoggedIn {
+                lastHour
+                statTiles
+                tokens
+                LaunchGrid()
+                openConsole
+            } else if model.status == nil && model.loading {
+                loadingView
+            } else {
+                loggedOutView
+            }
             footer.padding(.top, 2)
         }
         .padding(14)
@@ -45,6 +51,62 @@ struct MenuContentView: View {
         .environment(\.colorScheme, resolvedScheme)
         .preferredColorScheme(appearance.colorScheme)
         .task { await model.reload() }
+    }
+
+    private var isLoggedIn: Bool { model.status?.loggedIn == true }
+
+    // MARK: Logged-out / loading
+
+    /// Cold-start placeholder while the first `auth status` is in flight.
+    private var loadingView: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Checking…").font(.system(size: 12)).foregroundStyle(Theme.secondaryText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+    }
+
+    /// Stripped state when logged out: nothing but a login call-to-action. Stats
+    /// and the launch grid need an account, so we don't tease them here.
+    private var loggedOutView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: 34))
+                .foregroundStyle(Theme.secondaryText)
+            VStack(spacing: 4) {
+                Text("Log in to Edgee")
+                    .font(Theme.serif(17))
+                    .foregroundStyle(Theme.ink)
+                Text("See your usage and launch agents through the gateway.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button { Task { await model.login() } } label: {
+                HStack(spacing: 8) {
+                    if model.loggingIn {
+                        ProgressView().controlSize(.small)
+                        Text("Opening browser…")
+                    } else {
+                        Text("Log in")
+                    }
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.vertical, 11)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Theme.brandGradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.loggingIn)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 24)
+        .padding(.bottom, 18)
+        .padding(.horizontal, 10)
     }
 
     // MARK: Header
