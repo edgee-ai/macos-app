@@ -1,0 +1,68 @@
+name: Update Homebrew cask
+
+# Fires when the draft release from release.yml is published (human sign-off),
+# then points edgee-ai/homebrew-tap's cask at the new version + checksum.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.4.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-cask
+  cancel-in-progress: false
+
+jobs:
+  update-cask:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.release.tag_name, 'v') && github.event.release.prerelease == false)
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - name: Resolve version
+        id: v
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad tag '$TAG'"; exit 1; }
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      # Check out the app repo at the release tag so the cask template matches.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Download release checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern "Edgee-${{ steps.v.outputs.version }}.zip.sha256" --output sha256.txt
+
+      # HOMEBREW_TAP_TOKEN needs write access to edgee-ai/homebrew-tap.
+      - name: Bump cask in tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          SHA=$(cat sha256.txt)
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/edgee-ai/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          # Seed/refresh the cask from the app repo, then pin version + checksum.
+          cp Casks/edgee-menubar.rb tap/Casks/edgee-menubar.rb
+          sed -i -E "s/version \"[^\"]*\"/version \"$V\"/" tap/Casks/edgee-menubar.rb
+          sed -i -E "s/sha256 \"[^\"]*\"/sha256 \"$SHA\"/" tap/Casks/edgee-menubar.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/edgee-menubar.rb
+          git diff --staged --quiet && { echo "cask already at $V"; exit 0; }
+          git commit -m "edgee-menubar $V"
+          git push
