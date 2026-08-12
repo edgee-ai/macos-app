@@ -97,9 +97,10 @@ final class RelayManager: ObservableObject {
     private var terminationObserver: (any NSObjectProtocol)?
 
     init() {
-        // Relays are detached background processes, so tear them down on every
-        // app-exit path (logout/shutdown, SIGTERM, ⌘Q) — not just the panel's Quit
-        // button, which only fires when the user clicks it.
+        // Relays are detached background processes, so tear them down on the
+        // normal quit paths (⌘Q, logout, shutdown) via AppKit's terminate
+        // notification — not just the panel's Quit button. (A hard `kill`/SIGKILL
+        // can't be intercepted; those relays are reaped by launchd at exit.)
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -226,17 +227,19 @@ final class RelayManager: ObservableObject {
         processes[id] = spawned.process
 
         spawned.process.terminationHandler = { [weak self] proc in
-            let errText = spawned.stderr.text
             let status = proc.terminationStatus
+            let tail = spawned.stderr
             Task { @MainActor in
                 guard let self else { return }
                 self.processes[id] = nil
                 if self.stopping.remove(id) != nil {
                     self.states[id] = .stopped
                 } else {
-                    // Exited on its own — surface the last stderr line as the cause.
+                    // Read the tail after the actor hop so the stderr readability
+                    // handler has had a chance to append the final chunk first
+                    // (best-effort — a race here only yields a less specific line).
                     let lastLine =
-                        errText.split(whereSeparator: \.isNewline).last.map(String.init)
+                        tail.text.split(whereSeparator: \.isNewline).last.map(String.init)
                         ?? "relay exited (code \(status))"
                     self.states[id] = .failed(lastLine)
                 }

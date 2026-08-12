@@ -187,39 +187,46 @@ enum EdgeeCLI {
     /// or task cancellation the subprocess is terminated so it can't pin a thread.
     /// Returns nil on failure, timeout, or non-zero exit.
     private static func captureAsync(_ args: [String], timeout seconds: Double) async -> Data? {
+        await withTaskGroup(of: Data?.self) { group in
+            group.addTask { await runCapturing(args) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil  // timeout sentinel
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()  // cancels the loser → terminates the subprocess if it's still the capture
+            return result
+        }
+    }
+
+    /// One capture run: launch, then read stdout to EOF on a background queue (a
+    /// single reader, so there's no race between a readability handler and a final
+    /// read). Task cancellation terminates the process, which closes stdout and
+    /// unblocks the read. `ProcessBox` covers the cancel-before-`run()` window.
+    private static func runCapturing(_ args: [String]) async -> Data? {
         let process = makeProcess(args)
         let outPipe = Pipe()
         process.standardOutput = outPipe
         process.standardError = FileHandle.nullDevice
-        let sink = DataSink()
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty { handle.readabilityHandler = nil } else { sink.append(chunk) }
-        }
-
-        return await withTaskGroup(of: Data?.self) { group in
-            group.addTask {
-                await withTaskCancellationHandler {
-                    await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
-                        process.terminationHandler = { proc in
-                            outPipe.fileHandleForReading.readabilityHandler = nil
-                            let rest = outPipe.fileHandleForReading.readDataToEndOfFile()
-                            if !rest.isEmpty { sink.append(rest) }
-                            cont.resume(returning: proc.terminationStatus == 0 ? sink.data : nil)
-                        }
-                        do { try process.run() } catch { cont.resume(returning: nil) }
-                    }
-                } onCancel: {
-                    if process.isRunning { process.terminate() }
+        let box = ProcessBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
+                do {
+                    try process.run()
+                } catch {
+                    cont.resume(returning: nil)
+                    return
+                }
+                // If cancellation already arrived, tear it down now.
+                if box.started(process) { process.terminate() }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    cont.resume(returning: process.terminationStatus == 0 ? data : nil)
                 }
             }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                return nil
-            }
-            let result = await group.next() ?? nil
-            group.cancelAll()
-            return result
+        } onCancel: {
+            box.cancel()
         }
     }
 
@@ -271,23 +278,35 @@ final class StderrTail: @unchecked Sendable {
     var text: String {
         lock.lock()
         defer { lock.unlock() }
-        return String(data: data, encoding: .utf8) ?? ""
+        // Lossy decode: `suffix` may have truncated `data` mid-UTF-8, which would
+        // make `String(data:encoding:)` return nil and drop the whole message.
+        return String(decoding: data, as: UTF8.self)
     }
 }
 
-/// Thread-safe accumulator for a subprocess's full stdout.
-final class DataSink: @unchecked Sendable {
+/// Coordinates cancel-vs-launch for a one-shot capture: if task cancellation
+/// arrives before the process starts, the launch path terminates it immediately
+/// so it can't outlive its awaiter.
+final class ProcessBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var buffer = Data()
-    func append(_ chunk: Data) {
+    private var process: Process?
+    private var cancelled = false
+
+    /// Record the launched process; returns true if cancellation already arrived
+    /// (so the caller should terminate it right away).
+    func started(_ process: Process) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        buffer.append(chunk)
+        self.process = process
+        return cancelled
     }
-    var data: Data {
+
+    func cancel() {
         lock.lock()
-        defer { lock.unlock() }
-        return buffer
+        cancelled = true
+        let process = self.process
+        lock.unlock()
+        process?.terminate()
     }
 }
 
