@@ -39,20 +39,6 @@ enum EdgeeCLI {
         return runReaped(process)
     }
 
-    /// Spawn an arbitrary executable detached (augmented PATH, no pipes, no wait) —
-    /// used to open a terminal emulator on the agent command. Returns false on
-    /// launch failure so the caller can fall back.
-    @discardableResult
-    static func spawnDetached(executable: String, arguments: [String]) -> Bool {
-        let process = Process()
-        process.environment = childEnvironment()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        return runReaped(process)
-    }
-
     /// Retains a fire-and-forget process until it exits, then releases it, so the
     /// child is reaped instead of left a zombie when the `Process` object would
     /// otherwise deallocate right after `run()`.

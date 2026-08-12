@@ -133,63 +133,64 @@ final class RelayManager: ObservableObject {
     /// Run `edgee launch <id>` in the user's terminal — interactive coding agents
     /// need a TTY, so they can't run headless like the relay targets do.
     ///
-    /// We first look for an installed terminal emulator we know how to drive from
-    /// the CLI (kitty, Ghostty, WezTerm, Alacritty) and launch it directly on the
-    /// agent command. If none is found we fall back to opening a `.command` script
-    /// via LaunchServices — i.e. whatever app is the default handler for shell
-    /// scripts (typically Terminal.app). Either way the command runs through a
-    /// login shell so the user's real `PATH` (nix, homebrew, …) applies.
+    /// The terminal is launched via **LaunchServices** (`openApplication`), not as
+    /// a child process. A child would make Edgee.app the TCC "responsible process"
+    /// for anything the terminal/shell/tools touch (e.g. the Media Library), so
+    /// permission prompts would be attributed to Edgee.app. Reparenting to launchd
+    /// lets the terminal own its own permissions. If no known terminal app is
+    /// found we fall back to opening a `.command` script (also via LaunchServices).
+    /// Either way the command runs through a login shell so the user's real `PATH`
+    /// (nix, homebrew, …) applies.
     private func openInTerminal(_ id: String) {
         guard let edgee = EdgeeCLI.binaryPath else { return }
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        // One argv element for the shell. `cd "$HOME"` first because a GUI-launched
-        // app inherits CWD `/`, so the agent would otherwise start at the root.
+        // `cd "$HOME"` first because a GUI-launched app inherits CWD `/`.
         let command = "cd \"$HOME\" && exec '\(edgee)' launch \(id)"
-        let runInShell = [shell, "-lc", command]
 
-        if let term = Self.resolveTerminal(),
-            EdgeeCLI.spawnDetached(executable: term.bin, arguments: term.prefix + runInShell)
-        {
+        guard let term = Self.resolveTerminalApp() else {
+            openViaCommandFile(edgee: edgee, id: id)
             return
         }
-        openViaCommandFile(edgee: edgee, id: id)
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        config.activates = true
+        config.arguments = term.prefix + [shell, "-lc", command]
+        NSWorkspace.shared.openApplication(at: term.appURL, configuration: config) {
+            [weak self] _, error in
+            guard error != nil, let self else { return }
+            // Couldn't launch the terminal app → fall back to the default handler.
+            Task { @MainActor in self.openViaCommandFile(edgee: edgee, id: id) }
+        }
     }
 
-    /// A terminal emulator binary plus the argv prefix that makes it run a program.
-    private struct TerminalSpec {
-        let bin: String
+    /// A terminal emulator `.app` plus the argv prefix that makes it run a program.
+    private struct TerminalApp {
+        let appURL: URL
         let prefix: [String]
     }
 
-    /// First installed terminal we know how to launch a command in. `nil` → none,
-    /// so the caller falls back to the LaunchServices `.command` handler.
-    private static func resolveTerminal() -> TerminalSpec? {
+    /// First installed terminal app we know how to drive. `nil` → none, so the
+    /// caller falls back to the LaunchServices `.command` handler. We resolve the
+    /// `.app` bundle (not the CLI binary) so the launch goes through LaunchServices.
+    private static func resolveTerminalApp() -> TerminalApp? {
         let home = NSHomeDirectory()
-        let dirs = [
-            "\(home)/.nix-profile/bin",
-            "/run/current-system/sw/bin",
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "\(home)/.local/bin",
-            "/usr/bin",
-        ]
-        // (cli name, .app name, argv prefix before the program to run)
-        let candidates: [(name: String, app: String, prefix: [String])] = [
-            ("ghostty", "Ghostty", ["-e"]),
-            ("kitty", "kitty", ["--detach"]),
-            ("wezterm", "WezTerm", ["start", "--"]),
-            ("alacritty", "Alacritty", ["-e"]),
+        // (.app name, argv prefix before the program to run — no `--detach` needed
+        // since `createsNewApplicationInstance` already gives an independent window)
+        let candidates: [(app: String, prefix: [String])] = [
+            ("Ghostty", ["-e"]),
+            ("kitty", []),
+            ("WezTerm", ["start", "--"]),
+            ("Alacritty", ["-e"]),
         ]
         let fm = FileManager.default
-        for c in candidates {
-            let paths =
-                dirs.map { "\($0)/\(c.name)" } + [
-                    "/Applications/\(c.app).app/Contents/MacOS/\(c.name)",
-                    "\(home)/Applications/\(c.app).app/Contents/MacOS/\(c.name)",
-                    "\(home)/Applications/Home Manager Apps/\(c.app).app/Contents/MacOS/\(c.name)",
-                ]
-            if let bin = paths.first(where: { fm.isExecutableFile(atPath: $0) }) {
-                return TerminalSpec(bin: bin, prefix: c.prefix)
+        for candidate in candidates {
+            let paths = [
+                "/Applications/\(candidate.app).app",
+                "\(home)/Applications/\(candidate.app).app",
+                "\(home)/Applications/Home Manager Apps/\(candidate.app).app",
+            ]
+            if let path = paths.first(where: { fm.fileExists(atPath: $0) }) {
+                return TerminalApp(appURL: URL(fileURLWithPath: path), prefix: candidate.prefix)
             }
         }
         return nil
