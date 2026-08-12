@@ -52,14 +52,13 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # HOMEBREW_TAP_TOKEN needs read access to edgee-ai/edgee (for the CLI asset)
-      # and write access to edgee-ai/homebrew-tap (used by homebrew-cask.yml).
+      # edgee is public, so download the release asset directly — no token needed
+      # (a fine-grained PAT scoped to the tap can't read edgee-ai/edgee anyway).
+      # The edgee release for this version must be PUBLISHED (draft assets 404).
       - name: Fetch matching edgee CLI (arm64 darwin)
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          gh release download "${{ steps.v.outputs.tag }}" --repo edgee-ai/edgee \
-            --pattern edgee.aarch64-apple-darwin --output edgee-cli
+          URL="https://github.com/edgee-ai/edgee/releases/download/${{ steps.v.outputs.tag }}/edgee.aarch64-apple-darwin"
+          curl -fSL --retry 5 --retry-all-errors -o edgee-cli "$URL"
           chmod +x edgee-cli
           ./edgee-cli --version
 

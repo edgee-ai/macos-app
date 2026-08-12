@@ -62,8 +62,10 @@ Releases are automated via `.github/workflows/`, mirroring the CLI's setup:
 3. Review and **publish** the draft. That fires `homebrew-cask.yml`, which pins
    `edgee-ai/homebrew-tap/Casks/edgee-menubar.rb` to the new version + checksum.
 
-Required secret: `HOMEBREW_TAP_TOKEN` (read on `edgee-ai/edgee`, write on
-`edgee-ai/homebrew-tap`). Manual fallback: `make dist EDGEE_BIN=<matching edgee>`,
+Required secret: `HOMEBREW_TAP_TOKEN` (write on `edgee-ai/homebrew-tap`; the CLI
+binary is fetched from edgee's public releases, so no read token is needed).
+**The matching edgee release must be published** (not a draft) before tagging the
+app, or the build can't download the CLI. Manual fallback: `make dist EDGEE_BIN=<matching edgee>`,
 upload the zip to a release, paste `version`/`sha256` into the cask, copy to the tap.
 
 Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via
