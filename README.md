@@ -36,7 +36,8 @@ time.
 Once a release is published, end users install via the tap:
 
 ```bash
-brew install --cask --no-quarantine edgee-ai/tap/edgee-menubar
+brew install --cask edgee-ai/tap/edgee-menubar
+xattr -dr com.apple.quarantine "/Applications/Edgee.app"   # ad-hoc signed → clear Gatekeeper once
 ```
 
 This installs `Edgee.app` **and** puts the bundled `edgee` CLI on your `PATH`
@@ -44,11 +45,10 @@ This installs `Edgee.app` **and** puts the bundled `edgee` CLI on your `PATH`
 tool always stay in lockstep. It therefore conflicts with the standalone `edgee`
 formula — install one or the other (`brew unlink edgee` first if needed).
 
-`--no-quarantine` is required because the app is **ad-hoc signed, not yet
-notarized** by Apple — otherwise Gatekeeper blocks a downloaded build. (Dropping
-the flag becomes possible once we ship a notarized, Developer-ID-signed build.)
-If it's already installed with quarantine, clear it once with
-`xattr -dr com.apple.quarantine "/Applications/Edgee.app"`.
+The app is **ad-hoc signed, not yet notarized**, so Gatekeeper blocks a
+downloaded build on first open — hence the one-time `xattr` above (or right-click
+→ Open in Finder). This step goes away once we ship a notarized, Developer-ID
+build.
 
 ## Distribution (maintainers)
 
@@ -73,8 +73,8 @@ Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via
 
 ### Apple signing & notarization (planned)
 
-The app ships **ad-hoc signed** today (hence the cask's `--no-quarantine`). The
-pipeline is already wired for Developer-ID signing + notarization — it stays
+The app ships **ad-hoc signed** today (hence the one-time `xattr` quarantine
+step). The pipeline is already wired for Developer-ID signing + notarization — it stays
 dormant until these secrets exist, at which point `release.yml` signs with a
 hardened runtime, notarizes, and staples automatically (no code change):
 
@@ -85,7 +85,7 @@ hardened runtime, notarizes, and staples automatically (no code change):
 
 Setup: enroll in the Apple Developer Program, create a *Developer ID Application*
 cert (export `.p12`) and an App Store Connect API key, add the secrets above,
-then drop `--no-quarantine` (and the arch caveat) from the cask once builds are
+then drop the quarantine caveat (and the arch gate) from the cask once builds are
 notarized. Locally: `make dist CODESIGN_IDENTITY="Developer ID Application: … (TEAMID)"`.
 
 ## Layout

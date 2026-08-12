@@ -15,31 +15,30 @@ cask "edgee-menubar" do
   # Apple Silicon only for now — CI ships an arm64 build (see release.yml).
   depends_on arch: :arm64
   # macOS 14 Sonoma or newer (matches the app's LSMinimumSystemVersion).
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Edgee.app"
   # Expose the bundled CLI on PATH (symlinked into the Homebrew prefix's bin);
-  # it always matches the installed app version.
+  # it always matches the installed app version. NOTE: the standalone `edgee`
+  # formula links the same `bin/edgee`; installing both collides (casks can't
+  # declare a formula conflict), so pick one — see caveats.
   binary "#{appdir}/Edgee.app/Contents/Resources/edgee"
 
-  # The standalone `edgee` CLI formula links the same `bin/edgee`; installing both
-  # would collide, so make them mutually exclusive.
-  conflicts_with formula: "edgee"
-
-  # The bundled `edgee` CLI and app state live under the standard locations.
+  # App state locations for `brew uninstall --zap`.
   zap trash: [
     "~/Library/Caches/ai.edgee.menubar",
     "~/Library/Preferences/ai.edgee.menubar.plist",
   ]
 
   caveats <<~EOS
-    Edgee.app is ad-hoc signed (not yet notarized by Apple). If macOS refuses to
-    open it, reinstall without quarantine:
-
-      brew reinstall --cask --no-quarantine edgee-menubar
-
-    or clear the quarantine flag once:
+    Edgee.app is ad-hoc signed (not yet notarized by Apple), so Gatekeeper blocks
+    it on first open. Clear the quarantine flag once:
 
       xattr -dr com.apple.quarantine "#{appdir}/Edgee.app"
+
+    (or right-click Edgee.app in Finder → Open the first time).
+
+    This also installs the `edgee` CLI on your PATH; it conflicts with the
+    standalone `edgee` formula, so `brew unlink edgee` first if you have it.
   EOS
 end
