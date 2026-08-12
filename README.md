@@ -47,18 +47,39 @@ If it's already installed with quarantine, clear it once with
 
 ## Distribution (maintainers)
 
-The cask (`Casks/edgee-menubar.rb`) is the canonical definition; releasing is:
+Releases are automated via `.github/workflows/`, mirroring the CLI's setup:
 
-1. `make dist EDGEE_BIN=/path/to/matching/edgee` — builds `dist/Edgee-<version>.zip`
-   and prints the `version` + `sha256`.
-2. Create a GitHub Release `v<version>` on this repo and upload the zip
-   (the cask's `url` points at `…/releases/download/v<version>/Edgee-<version>.zip`).
-3. Update `version` + `sha256` in `Casks/edgee-menubar.rb` from step 1's output,
-   then copy it to `edgee-ai/homebrew-tap/Casks/edgee-menubar.rb`.
+1. Make sure the edgee CLI release `vX.Y.Z` exists — its arm64 darwin binary is
+   what the app embeds, so **the app version tracks the CLI version**.
+2. Tag the app to match and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+   `release.yml` (macOS runner) builds an arm64 `Edgee.app`, packages
+   `Edgee-X.Y.Z.zip` (+ sha256), and opens a **draft** GitHub Release.
+3. Review and **publish** the draft. That fires `homebrew-cask.yml`, which pins
+   `edgee-ai/homebrew-tap/Casks/edgee-menubar.rb` to the new version + checksum.
 
-(A CI workflow to automate build → release → cask-bump, mirroring the CLI's
-`homebrew-tap.yml`, is a natural follow-up — it needs a macOS runner and, for a
-frictionless install, an Apple Developer ID cert + notarization.)
+Required secret: `HOMEBREW_TAP_TOKEN` (read on `edgee-ai/edgee`, write on
+`edgee-ai/homebrew-tap`). Manual fallback: `make dist EDGEE_BIN=<matching edgee>`,
+upload the zip to a release, paste `version`/`sha256` into the cask, copy to the tap.
+
+Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via
+`lipo`) is a follow-up.
+
+### Apple signing & notarization (planned)
+
+The app ships **ad-hoc signed** today (hence the cask's `--no-quarantine`). The
+pipeline is already wired for Developer-ID signing + notarization — it stays
+dormant until these secrets exist, at which point `release.yml` signs with a
+hardened runtime, notarizes, and staples automatically (no code change):
+
+- `APPLE_SIGN_IDENTITY` — e.g. `Developer ID Application: Edgee, Inc. (TEAMID)`
+- `APPLE_CERT_P12` (base64 of the exported `.p12`) + `APPLE_CERT_PASSWORD`
+- `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8` (base64 App Store
+  Connect API key, for `notarytool`)
+
+Setup: enroll in the Apple Developer Program, create a *Developer ID Application*
+cert (export `.p12`) and an App Store Connect API key, add the secrets above,
+then drop `--no-quarantine` (and the arch caveat) from the cask once builds are
+notarized. Locally: `make dist CODESIGN_IDENTITY="Developer ID Application: … (TEAMID)"`.
 
 ## Layout
 

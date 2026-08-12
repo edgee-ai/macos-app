@@ -8,6 +8,17 @@ DIST     := dist
 # ../edgee/target/release/edgee).
 EDGEE_BIN ?= $(shell command -v edgee 2>/dev/null)
 
+# Codesigning identity. Default `-` = ad-hoc (local/dev; not distributable).
+# For a notarizable build, override with a Developer ID and hardened runtime is
+# added automatically:
+#   make dist CODESIGN_IDENTITY="Developer ID Application: Edgee (TEAMID)"
+CODESIGN_IDENTITY ?= -
+ifeq ($(CODESIGN_IDENTITY),-)
+CODESIGN := codesign --force --sign -
+else
+CODESIGN := codesign --force --options runtime --timestamp --sign "$(CODESIGN_IDENTITY)"
+endif
+
 # A nix/direnv devshell may export DEVELOPER_DIR and SDKROOT pointing at a nix
 # apple-sdk, and ship its own xcrun shim earlier on PATH. That breaks Xcode's
 # swift/xcrun ("tool 'swift' not found"). Clear those and put the system
@@ -51,8 +62,8 @@ bundle: build
 		/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $$VERSION" "$(APP)/Contents/Info.plist"; \
 		/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $$VERSION" "$(APP)/Contents/Info.plist"; \
 		echo "stamped bundle version $$VERSION (from embedded edgee CLI)"
-	codesign --force --sign - "$(APP)/Contents/Resources/edgee"
-	codesign --force --sign - "$(APP)"
+	$(CODESIGN) "$(APP)/Contents/Resources/edgee"
+	$(CODESIGN) "$(APP)"
 
 run: bundle
 	open "$(APP)"

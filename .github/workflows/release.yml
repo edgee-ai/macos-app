@@ -1,0 +1,110 @@
+name: Release macOS app
+
+# Tag the app `vX.Y.Z` to bundle the edgee CLI release `vX.Y.Z` (the app version
+# tracks the CLI it embeds). Produces a DRAFT GitHub Release with a zipped,
+# code-signed Edgee.app; publishing the draft triggers homebrew-cask.yml.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without leading v (must match a published edgee CLI release, e.g. 0.4.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      # Apple signing is optional and dormant until these org/repo secrets exist.
+      # When APPLE_SIGN_IDENTITY is set, the build is Developer-ID signed with a
+      # hardened runtime, then notarized + stapled; otherwise it's ad-hoc signed.
+      APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+      APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad version '$V'"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # HOMEBREW_TAP_TOKEN needs read access to edgee-ai/edgee (for the CLI asset)
+      # and write access to edgee-ai/homebrew-tap (used by homebrew-cask.yml).
+      - name: Fetch matching edgee CLI (arm64 darwin)
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          gh release download "${{ steps.v.outputs.tag }}" --repo edgee-ai/edgee \
+            --pattern edgee.aarch64-apple-darwin --output edgee-cli
+          chmod +x edgee-cli
+          ./edgee-cli --version
+
+      - name: Import Developer ID certificate
+        if: ${{ env.APPLE_SIGN_IDENTITY != '' }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "" "$KEYCHAIN"
+          echo "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+
+      - name: Build + package (arm64)
+        run: |
+          make dist EDGEE_BIN="$PWD/edgee-cli" CODESIGN_IDENTITY="${APPLE_SIGN_IDENTITY:--}"
+          BUILT=$(ls dist/Edgee-*.zip)
+          BUILT_VER=$(basename "$BUILT" .zip | sed 's/^Edgee-//')
+          if [ "$BUILT_VER" != "${{ steps.v.outputs.version }}" ]; then
+            echo "::error::bundle version $BUILT_VER != tag ${{ steps.v.outputs.version }} — tag the app to match the edgee CLI it bundles"
+            exit 1
+          fi
+
+      # Notarize the app and staple the ticket, then re-zip so the distributed
+      # archive carries the ticket (stapling applies to the .app, not the zip).
+      - name: Notarize + staple
+        if: ${{ env.APPLE_SIGN_IDENTITY != '' }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          echo "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+          xcrun notarytool submit "dist/Edgee-$V.zip" \
+            --key "$RUNNER_TEMP/key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple Edgee.app
+          rm -f "dist/Edgee-$V.zip" "dist/Edgee-$V.zip.sha256"
+          ditto -c -k --sequesterRsrc --keepParent Edgee.app "dist/Edgee-$V.zip"
+          shasum -a 256 "dist/Edgee-$V.zip" | awk '{print $1}' > "dist/Edgee-$V.zip.sha256"
+
+      - name: Create/refresh draft release + upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.v.outputs.tag }}"
+          V="${{ steps.v.outputs.version }}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --draft --title "$TAG" --generate-notes --target "$GITHUB_SHA"
+          gh release upload "$TAG" "dist/Edgee-$V.zip" "dist/Edgee-$V.zip.sha256" --clobber

@@ -12,6 +12,8 @@ cask "edgee-menubar" do
   desc "Menubar app for the Edgee agent gateway"
   homepage "https://www.edgee.cloud"
 
+  # Apple Silicon only for now — CI ships an arm64 build (see release.yml).
+  depends_on arch: :arm64
   # macOS 14 Sonoma or newer (matches the app's LSMinimumSystemVersion).
   depends_on macos: ">= :sonoma"
 
