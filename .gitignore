@@ -1,4 +1,5 @@
 .build/
 Edgee.app/
+dist/
 *.xcodeproj
 .DS_Store

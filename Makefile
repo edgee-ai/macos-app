@@ -1,6 +1,7 @@
 APP      := Edgee.app
 CONFIG   := release
 BIN      := .build/$(CONFIG)/EdgeeMenuBar
+DIST     := dist
 # The edgee CLI binary embedded in the bundle. By default we embed the `edgee`
 # already installed on PATH, so the app ships a real CLI. Override with
 # EDGEE_BIN=/path/to/edgee to bundle a specific build (e.g. a local checkout's
@@ -15,7 +16,7 @@ unexport DEVELOPER_DIR
 unexport SDKROOT
 export PATH := /usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
-.PHONY: build test bundle run clean icons
+.PHONY: build test bundle run dist clean icons
 
 # Regenerate the app icon (Edgee.icns) and menubar template (MenuBarIcon.pdf)
 # from the Edgee mark. Run after changing tools/gen-icons.swift; commit the
@@ -56,5 +57,19 @@ bundle: build
 run: bundle
 	open "$(APP)"
 
+# Package the signed bundle into a zip for a GitHub Release + Homebrew cask.
+# `ditto` preserves the bundle and its code signature; the printed sha256 goes
+# into Casks/edgee-menubar.rb once the zip is uploaded to the release.
+dist: bundle
+	@VERSION=$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$(APP)/Contents/Info.plist"); \
+		mkdir -p "$(DIST)"; \
+		ZIP="$(DIST)/Edgee-$$VERSION.zip"; \
+		rm -f "$$ZIP" "$$ZIP.sha256"; \
+		ditto -c -k --sequesterRsrc --keepParent "$(APP)" "$$ZIP"; \
+		shasum -a 256 "$$ZIP" | awk '{print $$1}' > "$$ZIP.sha256"; \
+		echo "built $$ZIP"; \
+		echo "version: $$VERSION"; \
+		echo "sha256:  $$(cat $$ZIP.sha256)"
+
 clean:
-	rm -rf .build "$(APP)"
+	rm -rf .build "$(APP)" "$(DIST)"
