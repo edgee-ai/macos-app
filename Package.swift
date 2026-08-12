@@ -11,6 +11,12 @@ let package = Package(
             // Language mode v5 keeps the skeleton free of Swift 6 strict-concurrency
             // friction; we can tighten to v6 once the app surface settles.
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
+        .testTarget(
+            name: "EdgeeMenuBarTests",
+            dependencies: ["EdgeeMenuBar"],
+            path: "Tests/EdgeeMenuBarTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
