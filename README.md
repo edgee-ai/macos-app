@@ -46,6 +46,11 @@ This installs `Edgee.app` **and** puts the bundled `edgee` CLI on your `PATH`
 tool always stay in lockstep. It therefore conflicts with the standalone `edgee`
 formula — install one or the other (`brew unlink edgee` first if needed).
 
+The two carry **separate version numbers**: the cask version is the app's, while
+the CLI it installs is whichever release that build embedded — `edgee --version`,
+or the app bundle's `EdgeeCLIVersion` key. Upgrading the cask only moves the CLI
+when the app release bumped it, which each release states in its notes.
+
 The app is **ad-hoc signed, not yet notarized**, so Gatekeeper blocks a
 downloaded build on first open — hence the one-time `xattr` above (or right-click
 → Open in Finder). This step goes away once we ship a notarized, Developer-ID

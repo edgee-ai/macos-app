@@ -49,15 +49,21 @@ jobs:
 
       - name: Resolve versions
         id: v
+        # Inputs come in as env, not interpolated into the script: `${{ }}` would
+        # paste them in before the format checks below could reject anything.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CLI_VERSION: ${{ inputs.cli_version }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V="${{ inputs.version }}"
+            V="$INPUT_VERSION"
           else
             V="${GITHUB_REF_NAME#v}"
           fi
+          V="${V#v}"
           [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad app version '$V'"; exit 1; }
           # The CLI to embed: the field when a run supplies one, else the default.
-          CLI="${{ inputs.cli_version }}"
+          CLI="$INPUT_CLI_VERSION"
           CLI="${CLI:-$EDGEE_CLI}"
           CLI="${CLI#v}"
           [[ "$CLI" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad edgee CLI version '$CLI'"; exit 1; }
@@ -75,10 +81,17 @@ jobs:
       # The pinned edgee release must be PUBLISHED (draft assets 404).
       - name: Fetch pinned edgee CLI (arm64 darwin)
         run: |
-          URL="https://github.com/edgee-ai/edgee/releases/download/v${{ steps.v.outputs.cli }}/edgee.aarch64-apple-darwin"
+          CLI="${{ steps.v.outputs.cli }}"
+          URL="https://github.com/edgee-ai/edgee/releases/download/v$CLI/edgee.aarch64-apple-darwin"
           curl -fSL --retry 5 --retry-all-errors -o edgee-cli "$URL"
           chmod +x edgee-cli
-          ./edgee-cli --version
+          # The asset is only as trustworthy as its tag: check the binary agrees it
+          # is the version we pinned, or the bundle ships a CLI nothing declares.
+          GOT=$(./edgee-cli --version)
+          case "$GOT" in
+            *"$CLI"*) echo "edgee CLI $GOT" ;;
+            *) echo "::error::edgee release v$CLI reports '$GOT'"; exit 1 ;;
+          esac
 
       - name: Import Developer ID certificate
         if: ${{ env.APPLE_SIGN_IDENTITY != '' }}
@@ -124,6 +137,11 @@ jobs:
         run: |
           TAG="${{ steps.v.outputs.tag }}"
           V="${{ steps.v.outputs.version }}"
+          # State the embedded CLI in the draft: the app version no longer implies
+          # it, and this is where a human signs the release off. (`--notes` is
+          # prepended to the generated notes.)
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "$TAG" --generate-notes --target "$GITHUB_SHA"
+            || gh release create "$TAG" --draft --title "$TAG" \
+                 --notes "Embeds edgee CLI v${{ steps.v.outputs.cli }}." \
+                 --generate-notes --target "$GITHUB_SHA"
           gh release upload "$TAG" "dist/Edgee-$V.zip" "dist/Edgee-$V.zip.sha256" --clobber
