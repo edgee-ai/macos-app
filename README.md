@@ -31,6 +31,24 @@ menubar — no Dock icon) and opens it. Click the menubar icon for the dropdown.
 The bundle's version is stamped from the embedded `edgee` CLI at `make bundle`
 time.
 
+## Terminal for the TUI agents
+
+Claude Code, Codex and OpenCode need a TTY, so tapping them opens a terminal
+window running `edgee launch <id>`. By default that's whatever app handles
+`.command` files (Terminal.app unless you changed it).
+
+kitty users get a window in their **own running instance** instead, if kitty's
+remote control is on — add to `kitty.conf`:
+
+```conf
+allow_remote_control socket-only
+listen_on unix:/tmp/kitty
+```
+
+Without it the app starts a kitty of its own, isolated in `--instance-group
+edgee` and set to quit with its last window, so it never ends up owning the
+windows you open later.
+
 ## Install (Homebrew cask)
 
 Once a release is published, end users install via the tap:
