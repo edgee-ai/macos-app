@@ -174,11 +174,12 @@ final class RelayManager: ObservableObject {
             let script = Self.writeLaunchScript(edgee: edgee, id: id)
         else { return }
         let kitty = Self.kittyApp
-        // Probing kitty's socket means spawning its client, so keep it off the main
-        // actor — this runs from a menubar click.
-        Task.detached(priority: .userInitiated) {
+        // Probing kitty's socket means spawning its client and waiting on it, so this
+        // runs on a GCD thread — off the main actor (it's a menubar click) and off the
+        // cooperative pool, which a blocking wait would starve.
+        DispatchQueue.global(qos: .userInitiated).async {
             let handedOff = kitty.map { Self.launchInRunningKitty($0, script: script) } ?? false
-            await MainActor.run {
+            Task { @MainActor in
                 if handedOff {
                     Self.activateKitty()
                 } else if let kitty {
@@ -193,7 +194,7 @@ final class RelayManager: ObservableObject {
     /// The `.command` script both kitty and the default handler run. Returns nil if it
     /// can't be written.
     private static func writeLaunchScript(edgee: String, id: String) -> URL? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shell = loginShell()
         // `cd "$HOME"` because a GUI-launched terminal can start us in `/`.
         let command = "cd \"$HOME\" && exec \(quoted(edgee)) launch \(id)"
         let script = """
@@ -218,7 +219,23 @@ final class RelayManager: ObservableObject {
         return url
     }
 
+    /// Login shells that run the script's command line as written. `$SHELL` is whatever
+    /// the user set, and the exotic ones get this subtly wrong: nu treats `"$HOME"` as a
+    /// literal, csh/tcsh honour `-l` only when it's the sole flag and so quietly drop
+    /// the login shell that the `PATH` fix depends on. Fall back to macOS's own default.
+    private static let posixLoginShells: Set<String> = ["zsh", "bash", "sh", "dash", "ksh", "fish"]
+
+    private static func loginShell() -> String {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? ""
+        let name = URL(fileURLWithPath: shell).lastPathComponent
+        return posixLoginShells.contains(name) ? shell : "/bin/zsh"
+    }
+
     private static let kittyBundleID = "net.kovidgoyal.kitty"
+
+    /// The instance `launchNewKitty` started, so `activateKitty` can tell the user's
+    /// kitty from ours when both are running.
+    private static var edgeeKittyPID: pid_t?
 
     /// Where kitty is installed, if it is. LaunchServices knows about non-standard
     /// locations (nix, home-manager) that a path scan would miss.
@@ -265,7 +282,9 @@ final class RelayManager: ObservableObject {
             .filter { url in
                 guard url.lastPathComponent.hasPrefix("kitty") else { return false }
                 var info = stat()
-                guard stat(url.path, &info) == 0 else { return false }
+                // `lstat`: a symlink planted in /tmp would otherwise pass the ownership
+                // check on whatever it points at.
+                guard lstat(url.path, &info) == 0 else { return false }
                 return (info.st_mode & S_IFMT) == S_IFSOCK && info.st_uid == getuid()
             }
     }
@@ -274,6 +293,11 @@ final class RelayManager: ObservableObject {
     /// group (so it never merges with or hands off to theirs) and quitting with its
     /// last window (so it isn't left around to adopt windows they open later).
     /// Repeated launches land in this same instance as extra OS windows.
+    ///
+    /// The isolation is not total, and can't be: while our instance is alive, it is a
+    /// running kitty, so LaunchServices may route the user's own Dock/Spotlight open to
+    /// it and their window lands here. Quitting with the last agent window is what keeps
+    /// that to the length of a session instead of indefinitely.
     @MainActor
     private static func launchNewKitty(_ app: URL, script: URL) {
         let config = NSWorkspace.OpenConfiguration()
@@ -284,21 +308,27 @@ final class RelayManager: ObservableObject {
             "--single-instance", "--instance-group", "edgee",
             "/bin/sh", script.path,
         ]
-        NSWorkspace.shared.openApplication(at: app, configuration: config) { _, error in
-            guard error != nil else { return }
-            // kitty refused to launch → default shell-script handler.
-            Task { @MainActor in NSWorkspace.shared.open(script) }
+        NSWorkspace.shared.openApplication(at: app, configuration: config) { running, error in
+            Task { @MainActor in
+                guard error == nil else {
+                    // kitty refused to launch → default shell-script handler.
+                    NSWorkspace.shared.open(script)
+                    return
+                }
+                edgeeKittyPID = running?.processIdentifier
+            }
         }
     }
 
     /// Bring kitty forward after handing it a window over the socket, which doesn't
-    /// raise the app on its own.
+    /// raise the app on its own. Prefers an instance that isn't the one we started:
+    /// the window went to the user's, and `runningApplications` is unordered, so with
+    /// one of ours still open it would otherwise be a coin flip which one comes up.
     @MainActor
     private static func activateKitty() {
-        NSRunningApplication
-            .runningApplications(withBundleIdentifier: kittyBundleID)
-            .first?
-            .activate()
+        let instances = NSRunningApplication.runningApplications(withBundleIdentifier: kittyBundleID)
+        let theirs = instances.first { $0.processIdentifier != edgeeKittyPID }
+        (theirs ?? instances.first)?.activate()
     }
 
     /// How long a remote-control client gets before we give up on it.
@@ -313,17 +343,20 @@ final class RelayManager: ObservableObject {
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         do {
             try process.run()
         } catch {
             return false
         }
-        let deadline = Date().addingTimeInterval(kittenTimeout)
-        while process.isRunning, Date() < deadline { usleep(20_000) }
-        guard !process.isRunning else {
-            // Reap it, so a wedged client doesn't linger as a zombie child of the app.
+        guard exited.wait(timeout: .now() + kittenTimeout) == .success else {
+            // Wedged on a socket that accepts but never answers. Ask it to go, then
+            // insist — waiting on `SIGTERM` alone would park this thread for good.
             process.terminate()
-            process.waitUntilExit()
+            if exited.wait(timeout: .now() + 1) != .success {
+                kill(process.processIdentifier, SIGKILL)
+            }
             return false
         }
         return process.terminationStatus == 0

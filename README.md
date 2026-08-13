@@ -46,8 +46,10 @@ listen_on unix:/tmp/kitty
 ```
 
 Without it the app starts a kitty of its own, isolated in `--instance-group
-edgee` and set to quit with its last window, so it never ends up owning the
-windows you open later.
+edgee` and set to quit with its last window. While an agent window is open that
+instance is still a running kitty, so a Dock/Spotlight launch can land your own
+window in it; once the last agent window closes it exits, so it can't go on
+owning your windows after the session.
 
 ## Install (Homebrew cask)
 
