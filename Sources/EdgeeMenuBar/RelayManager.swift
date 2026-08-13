@@ -133,73 +133,80 @@ final class RelayManager: ObservableObject {
     /// Run `edgee launch <id>` in the user's terminal — interactive coding agents
     /// need a TTY, so they can't run headless like the relay targets do.
     ///
-    /// The terminal is launched via **LaunchServices** (`openApplication`), not as
-    /// a child process. A child would make Edgee.app the TCC "responsible process"
-    /// for anything the terminal/shell/tools touch (e.g. the Media Library), so
-    /// permission prompts would be attributed to Edgee.app. Reparenting to launchd
-    /// lets the terminal own its own permissions. If no known terminal app is
-    /// found we fall back to opening a `.command` script (also via LaunchServices).
-    /// Either way the command runs through a login shell so the user's real `PATH`
-    /// (nix, homebrew, …) applies.
+    /// We write the command to a `.command` script, then place it in a terminal —
+    /// first reachable option wins:
+    ///
+    /// 1. A running kitty with remote control enabled → a new OS window inside the
+    ///    user's own instance (`kitten @ launch`). Nothing new is started.
+    /// 2. kitty installed but not reachable → an instance of our own, isolated in
+    ///    `--instance-group edgee` and told to quit with its last window.
+    /// 3. Otherwise → **LaunchServices**, which routes the `.command` to whatever app
+    ///    handles shell scripts (Terminal.app unless the user changed it).
+    ///
+    /// Except for kitty's remote-control client — which only talks to a socket and
+    /// exits, leaving the agent parented to the user's kitty — nothing here is spawned
+    /// as a child of Edgee.app. A child would make Edgee.app the TCC "responsible
+    /// process" for anything the terminal/shell/tools touch (e.g. the Media Library),
+    /// so permission prompts would be attributed to Edgee.app. Reparenting to launchd
+    /// lets the terminal own its own permissions.
+    ///
+    /// Getting `PATH` right takes two steps, both load-bearing — without them `edgee`
+    /// reports the agent as "not installed" whenever it lives somewhere the system
+    /// doesn't know about (nix, homebrew, npm):
+    ///
+    /// 1. Re-exec through `$SHELL -lc`. Terminal runs a `.command` directly, with a
+    ///    near-empty `PATH` (`/usr/bin:/bin` + `/etc/paths.d`) and no login shell,
+    ///    despite the prompt it echoes into the window.
+    /// 2. First drop the exported `__…` guard variables. launchd's environment keeps
+    ///    them (`__NIX_DARWIN_SET_ENVIRONMENT_DONE`, `__HM_SESS_VARS_SOURCED`,
+    ///    `__ETC_ZSHENV_SOURCED`, …) while *not* keeping the `PATH` they went with, so
+    ///    a login shell sees "already sourced", skips the setup, and step 1 alone
+    ///    yields the same stub `PATH`.
+    ///
+    /// Step 2 replaces an older scheme that detected emulators (Ghostty, kitty, …) and
+    /// drove each by argv in a plain new application instance. Don't go back to that:
+    /// kitty is one macOS app instance per bundle, so the instance *we* start ends up
+    /// owning the OS windows the user opens later — with our environment and our
+    /// lifetime. The instance group plus `macos_quit_when_last_window_closed` is what
+    /// keeps our instance out of their session.
     private func openInTerminal(_ id: String) {
-        guard let edgee = EdgeeCLI.binaryPath else { return }
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        // `cd "$HOME"` first because a GUI-launched app inherits CWD `/`.
-        let command = "cd \"$HOME\" && exec '\(edgee)' launch \(id)"
-
-        guard let term = Self.resolveTerminalApp() else {
-            openViaCommandFile(edgee: edgee, id: id)
-            return
-        }
-        let config = NSWorkspace.OpenConfiguration()
-        config.createsNewApplicationInstance = true
-        config.activates = true
-        config.arguments = term.prefix + [shell, "-lc", command]
-        NSWorkspace.shared.openApplication(at: term.appURL, configuration: config) {
-            [weak self] _, error in
-            guard error != nil, let self else { return }
-            // Couldn't launch the terminal app → fall back to the default handler.
-            Task { @MainActor in self.openViaCommandFile(edgee: edgee, id: id) }
-        }
-    }
-
-    /// A terminal emulator `.app` plus the argv prefix that makes it run a program.
-    private struct TerminalApp {
-        let appURL: URL
-        let prefix: [String]
-    }
-
-    /// First installed terminal app we know how to drive. `nil` → none, so the
-    /// caller falls back to the LaunchServices `.command` handler. We resolve the
-    /// `.app` bundle (not the CLI binary) so the launch goes through LaunchServices.
-    private static func resolveTerminalApp() -> TerminalApp? {
-        let home = NSHomeDirectory()
-        // (.app name, argv prefix before the program to run — no `--detach` needed
-        // since `createsNewApplicationInstance` already gives an independent window)
-        let candidates: [(app: String, prefix: [String])] = [
-            ("Ghostty", ["-e"]),
-            ("kitty", []),
-            ("WezTerm", ["start", "--"]),
-            ("Alacritty", ["-e"]),
-        ]
-        let fm = FileManager.default
-        for candidate in candidates {
-            let paths = [
-                "/Applications/\(candidate.app).app",
-                "\(home)/Applications/\(candidate.app).app",
-                "\(home)/Applications/Home Manager Apps/\(candidate.app).app",
-            ]
-            if let path = paths.first(where: { fm.fileExists(atPath: $0) }) {
-                return TerminalApp(appURL: URL(fileURLWithPath: path), prefix: candidate.prefix)
+        guard let edgee = EdgeeCLI.binaryPath,
+            let script = Self.writeLaunchScript(edgee: edgee, id: id)
+        else { return }
+        let kitty = Self.kittyApp
+        // Probing kitty's socket means spawning its client and waiting on it, so this
+        // runs on a GCD thread — off the main actor (it's a menubar click) and off the
+        // cooperative pool, which a blocking wait would starve.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let handedOff = kitty.map { Self.launchInRunningKitty($0, script: script) } ?? false
+            Task { @MainActor in
+                if handedOff {
+                    Self.activateKitty()
+                } else if let kitty {
+                    Self.launchNewKitty(kitty, script: script)
+                } else {
+                    NSWorkspace.shared.open(script)
+                }
             }
         }
-        return nil
     }
 
-    /// Fallback: write a `.command` script and open it via LaunchServices (routes
-    /// to the default shell-script handler, usually Terminal.app).
-    private func openViaCommandFile(edgee: String, id: String) {
-        let script = "#!/bin/sh\ncd \"$HOME\"\nexec '\(edgee)' launch \(id)\n"
+    /// The `.command` script both kitty and the default handler run. Returns nil if it
+    /// can't be written.
+    private static func writeLaunchScript(edgee: String, id: String) -> URL? {
+        let shell = loginShell()
+        // `cd "$HOME"` because a GUI-launched terminal can start us in `/`.
+        let command = "cd \"$HOME\" && exec \(quoted(edgee)) launch \(id)"
+        let script = """
+            #!/bin/sh
+            # Shell-startup guards without the PATH they belong to — see above.
+            for v in $(/usr/bin/env | /usr/bin/sed -n 's/^\\(__[A-Za-z0-9_]*\\)=.*/\\1/p'); do
+                unset "$v"
+            done
+            exec \(quoted(shell)) -lc \(quoted(command))
+
+            """
+
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("edgee-launch-\(id).command")
         do {
@@ -207,9 +214,174 @@ final class RelayManager: ObservableObject {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o755], ofItemAtPath: url.path)
         } catch {
-            return
+            return nil
         }
-        NSWorkspace.shared.open(url)
+        return url
+    }
+
+    /// Login shells that run the script's command line as written. `$SHELL` is whatever
+    /// the user set, and the exotic ones get this subtly wrong: nu treats `"$HOME"` as a
+    /// literal, csh/tcsh honour `-l` only when it's the sole flag and so quietly drop
+    /// the login shell that the `PATH` fix depends on. Fall back to macOS's own default.
+    private static let posixLoginShells: Set<String> = ["zsh", "bash", "sh", "dash", "ksh", "fish"]
+
+    private static func loginShell() -> String {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? ""
+        // Absolute only: a bare `SHELL=fish` would have to resolve against the stub
+        // `PATH` the script runs under, which is the thing we're working around.
+        guard shell.hasPrefix("/") else { return "/bin/zsh" }
+        return posixLoginShells.contains(URL(fileURLWithPath: shell).lastPathComponent)
+            ? shell : "/bin/zsh"
+    }
+
+    private static let kittyBundleID = "net.kovidgoyal.kitty"
+
+    /// The instance `launchNewKitty` started, so `activateKitty` can tell the user's
+    /// kitty from ours when both are running. The app object rather than its pid: ours
+    /// quits with its last window, and a bare pid would go on matching whatever the
+    /// system recycled it for.
+    private static var edgeeKitty: NSRunningApplication?
+
+    /// Where kitty is installed, if it is. LaunchServices knows about non-standard
+    /// locations (nix, home-manager) that a path scan would miss.
+    private static var kittyApp: URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: kittyBundleID)
+    }
+
+    /// Open the script in a new OS window of a *running* kitty via remote control,
+    /// which the user has to opt into (`allow_remote_control` + `listen_on` in
+    /// `kitty.conf`). False if there's no reachable socket — the common case.
+    ///
+    /// Not to be confused with `--single-instance`: that only hands off to an instance
+    /// which was *itself* started with the flag, so for a kitty the user launched
+    /// normally it silently starts a second instance instead of reusing theirs.
+    private nonisolated static func launchInRunningKitty(_ app: URL, script: URL) -> Bool {
+        let kitten = app.appendingPathComponent("Contents/MacOS/kitten")
+        guard FileManager.default.isExecutableFile(atPath: kitten.path) else { return false }
+        for socket in kittySockets() {
+            let address = "unix:\(socket.path)"
+            guard run(kitten, ["@", "--to", address, "ls"]) else { continue }
+            if run(
+                kitten,
+                [
+                    "@", "--to", address, "launch", "--type=os-window",
+                    "--cwd=\(NSHomeDirectory())", "/bin/sh", script.path,
+                ])
+            {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Sockets kitty may be listening on. `listen_on` points wherever the user says,
+    /// with a `{kitty_pid}` placeholder in the conventional spelling, so we collect
+    /// `kitty*` sockets from the two usual directories and let the caller probe them.
+    ///
+    /// Ours only: `/tmp` is world-writable, and handing the agent to a socket another
+    /// account is listening on would hand them the session with it.
+    private nonisolated static func kittySockets() -> [URL] {
+        let fm = FileManager.default
+        return [fm.temporaryDirectory, URL(fileURLWithPath: "/tmp")]
+            .flatMap { (try? fm.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+            .filter { url in
+                guard url.lastPathComponent.hasPrefix("kitty") else { return false }
+                var info = stat()
+                // `lstat`: a symlink planted in /tmp would otherwise pass the ownership
+                // check on whatever it points at.
+                guard lstat(url.path, &info) == 0 else { return false }
+                return (info.st_mode & S_IFMT) == S_IFSOCK && info.st_uid == getuid()
+            }
+    }
+
+    /// Start our own kitty instance, kept out of the user's way: its own instance
+    /// group (so it never merges with or hands off to theirs) and quitting with its
+    /// last window (so it isn't left around to adopt windows they open later).
+    /// Repeated launches land in this same instance as extra OS windows.
+    ///
+    /// The isolation is not total, and can't be: while our instance is alive, it is a
+    /// running kitty, so LaunchServices may route the user's own Dock/Spotlight open to
+    /// it and their window lands here. Quitting with the last agent window is what keeps
+    /// that to the length of a session instead of indefinitely.
+    @MainActor
+    private static func launchNewKitty(_ app: URL, script: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        config.activates = true
+        config.arguments = [
+            "-o", "macos_quit_when_last_window_closed=yes",
+            // No socket of our own: the user's `listen_on` applies to this instance too,
+            // so it would race theirs for the same path — and then our own socket could
+            // be the one the next launch finds and hands the agent to.
+            "-o", "allow_remote_control=no",
+            "--single-instance", "--instance-group", "edgee",
+            "/bin/sh", script.path,
+        ]
+        NSWorkspace.shared.openApplication(at: app, configuration: config) { running, error in
+            Task { @MainActor in
+                guard error == nil else {
+                    // kitty refused to launch → default shell-script handler.
+                    NSWorkspace.shared.open(script)
+                    return
+                }
+                // On a repeat launch this is the `--single-instance` forwarder, already
+                // gone by the time we're called (LaunchServices reports it with a dead
+                // or `-1` pid). Keeping the instance we recorded is the point.
+                guard let running, running.processIdentifier > 0, !running.isTerminated
+                else { return }
+                edgeeKitty = running
+            }
+        }
+    }
+
+    /// Bring kitty forward after handing it a window over the socket, which doesn't
+    /// raise the app on its own. Prefers an instance that isn't the one we started:
+    /// the window went to the user's, and `runningApplications` is unordered, so with
+    /// one of ours still open it would otherwise be a coin flip which one comes up.
+    @MainActor
+    private static func activateKitty() {
+        let instances = NSRunningApplication.runningApplications(withBundleIdentifier: kittyBundleID)
+        var candidates = instances
+        if let ours = edgeeKitty, !ours.isTerminated {
+            candidates.removeAll { $0.processIdentifier == ours.processIdentifier }
+        }
+        (candidates.first ?? instances.first)?.activate()
+    }
+
+    /// How long a remote-control client gets before we give up on it.
+    private static let kittenTimeout: TimeInterval = 5
+
+    /// Run a short-lived command to completion, true on a clean exit. For kitty's
+    /// remote-control client only: it round-trips a socket, so the wait is brief, and
+    /// the timeout is there for a socket that accepts but never answers.
+    private nonisolated static func run(_ executable: URL, _ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        guard exited.wait(timeout: .now() + kittenTimeout) == .success else {
+            // Wedged on a socket that accepts but never answers. Ask it to go, then
+            // insist — waiting on `SIGTERM` alone would park this thread for good.
+            process.terminate()
+            if exited.wait(timeout: .now() + 1) != .success {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            return false
+        }
+        return process.terminationStatus == 0
+    }
+
+    /// Single-quote a string for POSIX `sh`.
+    private static func quoted(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     func start(_ target: RelayTarget) {
