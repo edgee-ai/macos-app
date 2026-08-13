@@ -28,34 +28,6 @@ enum EdgeeCLI {
     /// AppleScript/shell command used to launch interactive agents in Terminal.
     static var binaryPath: String? { resolvedBinary }
 
-    /// Fire-and-forget launch: spawn `edgee <args>` detached, no pipes, no wait.
-    /// Used for one-shot launch targets (e.g. `launch codex-desktop`) where we
-    /// don't supervise a long-running process. Returns false on launch failure.
-    @discardableResult
-    static func launchDetached(_ args: [String]) -> Bool {
-        let process = makeProcess(args)
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        return runReaped(process)
-    }
-
-    /// Retains a fire-and-forget process until it exits, then releases it, so the
-    /// child is reaped instead of left a zombie when the `Process` object would
-    /// otherwise deallocate right after `run()`.
-    private static let reaper = ProcessReaper()
-    @discardableResult
-    private static func runReaped(_ process: Process) -> Bool {
-        reaper.retain(process)
-        process.terminationHandler = { reaper.release($0) }
-        do {
-            try process.run()
-        } catch {
-            reaper.release(process)
-            return false
-        }
-        return true
-    }
-
     /// Directories prepended to `PATH` (and scanned for the binary).
     private static let searchDirs = [
         "\(NSHomeDirectory())/.local/bin",
@@ -318,22 +290,5 @@ final class ProcessBox: @unchecked Sendable {
         let process = self.process
         lock.unlock()
         process?.terminate()
-    }
-}
-
-/// Retains fire-and-forget `Process` objects until they exit, so the child is
-/// reaped rather than left a zombie when the object would deallocate after `run()`.
-final class ProcessReaper: @unchecked Sendable {
-    private let lock = NSLock()
-    private var live = Set<Process>()
-    func retain(_ process: Process) {
-        lock.lock()
-        defer { lock.unlock() }
-        live.insert(process)
-    }
-    func release(_ process: Process) {
-        lock.lock()
-        defer { lock.unlock() }
-        live.remove(process)
     }
 }
