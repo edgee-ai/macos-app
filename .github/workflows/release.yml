@@ -1,9 +1,9 @@
 name: Release macOS app
 
-# Tag the app `vX.Y.Z` to release it. The edgee CLI it embeds is pinned
-# separately in `.edgee-cli-version`, so the app can ship a fix of its own
-# without a new CLI release. Produces a DRAFT GitHub Release with a zipped,
-# code-signed Edgee.app; publishing the draft triggers homebrew-cask.yml.
+# Tag the app `vX.Y.Z` to release it. The edgee CLI it embeds is versioned
+# separately — EDGEE_CLI below, overridable per run — so the app can ship a fix
+# of its own without a new CLI release. Produces a DRAFT GitHub Release with a
+# zipped, code-signed Edgee.app; publishing the draft triggers homebrew-cask.yml.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
@@ -14,12 +14,18 @@ on:
         required: true
         type: string
       cli_version:
-        description: "edgee CLI to embed, without leading v — must be a published edgee release. Defaults to .edgee-cli-version"
+        description: "edgee CLI to embed, without leading v — must be a published edgee release. Blank = the EDGEE_CLI default in this workflow"
         required: false
         type: string
 
 permissions:
   contents: write
+
+env:
+  # The edgee CLI release a tag push embeds — a manual run can override it with
+  # the cli_version field, and the value lives with the tagged commit either way,
+  # so rebuilding a tag rebuilds the same bundle. Bump it to move the CLI.
+  EDGEE_CLI: "0.5.0"
 
 concurrency:
   group: release-macos-${{ github.ref }}
@@ -50,10 +56,9 @@ jobs:
             V="${GITHUB_REF_NAME#v}"
           fi
           [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad app version '$V'"; exit 1; }
-          # The CLI to embed: dispatch input wins, else the pinned file, so a tag
-          # build embeds exactly what the tagged commit says it does.
+          # The CLI to embed: the field when a run supplies one, else the default.
           CLI="${{ inputs.cli_version }}"
-          CLI="${CLI:-$(tr -d '[:space:]' < .edgee-cli-version)}"
+          CLI="${CLI:-$EDGEE_CLI}"
           CLI="${CLI#v}"
           [[ "$CLI" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad edgee CLI version '$CLI'"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"

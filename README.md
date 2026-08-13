@@ -55,11 +55,12 @@ build.
 
 Releases are automated via `.github/workflows/`, mirroring the CLI's setup:
 
-**The app version is its own.** The edgee CLI the bundle embeds is pinned in
-`.edgee-cli-version`, so an app-only fix ships without touching the CLI.
+**The app version is its own.** The edgee CLI the bundle embeds is versioned
+separately by `EDGEE_CLI` in `release.yml`, so an app-only fix ships without
+touching the CLI.
 
-1. To move the embedded CLI, bump `.edgee-cli-version` to a **published** edgee
-   release and commit it. Leave it alone to keep the CLI you're already shipping.
+1. To move the embedded CLI, bump `EDGEE_CLI` to a **published** edgee release
+   and commit it. Leave it alone to keep the CLI you're already shipping.
 2. Tag the app and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
    `release.yml` (macOS runner) builds an arm64 `Edgee.app`, packages
    `Edgee-X.Y.Z.zip` (+ sha256), and opens a **draft** GitHub Release.
@@ -68,10 +69,10 @@ Releases are automated via `.github/workflows/`, mirroring the CLI's setup:
 
 Required secret: `HOMEBREW_TAP_TOKEN` (write on `edgee-ai/homebrew-tap`; the CLI
 binary is fetched from edgee's public releases, so no read token is needed). The
-pinned edgee release must be published (not a draft) or the build can't download
-the CLI — its arm64 darwin binary is the asset the app embeds. `release.yml`'s
-manual trigger also takes a one-off `cli_version` to embed a different CLI
-without a commit. Manual fallback: `make dist APP_VERSION=X.Y.Z EDGEE_BIN=<edgee>`,
+edgee release must be published (not a draft) or the build can't download the CLI
+— its arm64 darwin binary is the asset the app embeds. Running `release.yml` by
+hand instead takes both versions as fields, so you can embed a different CLI for
+one build without a commit. Manual fallback: `make dist APP_VERSION=X.Y.Z EDGEE_BIN=<edgee>`,
 upload the zip to a release, paste `version`/`sha256` into the cask, copy to the tap.
 
 Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via
