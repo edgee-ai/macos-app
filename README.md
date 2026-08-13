@@ -28,8 +28,9 @@ make clean
 
 `make run` produces `Edgee.app` (marked `LSUIElement`, so it lives only in the
 menubar — no Dock icon) and opens it. Click the menubar icon for the dropdown.
-The bundle's version is stamped from the embedded `edgee` CLI at `make bundle`
-time.
+`make bundle` stamps the bundle version from `APP_VERSION`, defaulting to the
+embedded CLI's version, and always records that CLI's version in the plist's
+`EdgeeCLIVersion`.
 
 ## Terminal for the TUI agents
 
@@ -65,6 +66,11 @@ This installs `Edgee.app` **and** puts the bundled `edgee` CLI on your `PATH`
 tool always stay in lockstep. It therefore conflicts with the standalone `edgee`
 formula — install one or the other (`brew unlink edgee` first if needed).
 
+The two carry **separate version numbers**: the cask version is the app's, while
+the CLI it installs is whichever release that build embedded — `edgee --version`,
+or the app bundle's `EdgeeCLIVersion` key. Upgrading the cask only moves the CLI
+when the app release bumped it, which each release states in its notes.
+
 The app is **ad-hoc signed, not yet notarized**, so Gatekeeper blocks a
 downloaded build on first open — hence the one-time `xattr` above (or right-click
 → Open in Finder). This step goes away once we ship a notarized, Developer-ID
@@ -74,18 +80,24 @@ build.
 
 Releases are automated via `.github/workflows/`, mirroring the CLI's setup:
 
-1. Make sure the edgee CLI release `vX.Y.Z` exists — its arm64 darwin binary is
-   what the app embeds, so **the app version tracks the CLI version**.
-2. Tag the app to match and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+**The app version is its own.** The edgee CLI the bundle embeds is versioned
+separately by `EDGEE_CLI` in `release.yml`, so an app-only fix ships without
+touching the CLI.
+
+1. To move the embedded CLI, bump `EDGEE_CLI` to a **published** edgee release
+   and commit it. Leave it alone to keep the CLI you're already shipping.
+2. Tag the app and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
    `release.yml` (macOS runner) builds an arm64 `Edgee.app`, packages
    `Edgee-X.Y.Z.zip` (+ sha256), and opens a **draft** GitHub Release.
 3. Review and **publish** the draft. That fires `homebrew-cask.yml`, which pins
    `edgee-ai/homebrew-tap/Casks/edgee-menubar.rb` to the new version + checksum.
 
 Required secret: `HOMEBREW_TAP_TOKEN` (write on `edgee-ai/homebrew-tap`; the CLI
-binary is fetched from edgee's public releases, so no read token is needed).
-**The matching edgee release must be published** (not a draft) before tagging the
-app, or the build can't download the CLI. Manual fallback: `make dist EDGEE_BIN=<matching edgee>`,
+binary is fetched from edgee's public releases, so no read token is needed). The
+edgee release must be published (not a draft) or the build can't download the CLI
+— its arm64 darwin binary is the asset the app embeds. Running `release.yml` by
+hand instead takes both versions as fields, so you can embed a different CLI for
+one build without a commit. Manual fallback: `make dist APP_VERSION=X.Y.Z EDGEE_BIN=<edgee>`,
 upload the zip to a release, paste `version`/`sha256` into the cask, copy to the tap.
 
 Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via

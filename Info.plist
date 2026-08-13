@@ -18,6 +18,10 @@
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <!-- Version of the `edgee` CLI embedded in Resources/, stamped by `make
+         bundle`. Independent of the app's own version above. -->
+    <key>EdgeeCLIVersion</key>
+    <string>0.0.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <!-- Menubar-only agent: no Dock icon, no app-switcher entry. -->

@@ -18,8 +18,9 @@ cask "edgee-menubar" do
   depends_on macos: :sonoma
 
   app "Edgee.app"
-  # Expose the bundled CLI on PATH (symlinked into the Homebrew prefix's bin);
-  # it always matches the installed app version. NOTE: the standalone `edgee`
+  # Expose the bundled CLI on PATH (symlinked into the Homebrew prefix's bin).
+  # Its version is pinned independently of the app's — `edgee --version`, or the
+  # app bundle's `EdgeeCLIVersion` key, is what it actually is. NOTE: the standalone `edgee`
   # formula links the same `bin/edgee`; installing both collides (casks can't
   # declare a formula conflict), so pick one — see caveats.
   binary "#{appdir}/Edgee.app/Contents/Resources/edgee"
