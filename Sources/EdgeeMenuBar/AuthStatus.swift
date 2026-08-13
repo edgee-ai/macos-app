@@ -43,6 +43,27 @@ struct Org: Codable, Identifiable {
     let active: Bool
 }
 
+/// The Edgee web console.
+enum Console {
+    static let base = "https://www.edgee.ai"
+
+    /// The console URL to open for an org. The console scopes everything under
+    /// `/~/<org-slug>`; the bare host only redirects there once the *browser* has
+    /// a session and a last-used org, so sending a signed-in user to the root can
+    /// land them somewhere other than the org the tray is reporting on. Falls back
+    /// to the root when we have no slug (logged out, or org not yet chosen) —
+    /// there's nothing better to guess, and the console will sort them out.
+    static func url(orgSlug: String?) -> URL? {
+        guard let slug = orgSlug?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !slug.isEmpty,
+            // Slugs are lowercase alphanumeric + hyphen, so this is belt-and-braces
+            // against a surprising one silently producing a nil URL below.
+            let encoded = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return URL(string: base) }
+        return URL(string: "\(base)/~/\(encoded)")
+    }
+}
+
 /// Decoded from `edgee auth login --non-interactive --json` (`LoginOutcome`).
 struct LoginOutcome: Codable {
     let loggedIn: Bool

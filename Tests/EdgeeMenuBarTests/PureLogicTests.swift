@@ -212,4 +212,26 @@ final class PureLogicTests: XCTestCase {
             from: Data(#"[{"id":"o1","slug":"acme","name":"Acme","active":true}]"#.utf8))
         XCTAssertEqual(orgs.first?.slug, "acme")
     }
+
+    func testConsoleURLIsOrgScoped() {
+        XCTAssertEqual(
+            Console.url(orgSlug: "edgee")?.absoluteString, "https://www.edgee.ai/~/edgee")
+        XCTAssertEqual(
+            Console.url(orgSlug: "acme-corp")?.absoluteString, "https://www.edgee.ai/~/acme-corp")
+    }
+
+    func testConsoleURLFallsBackToRootWithoutOrg() {
+        for slug in [nil, "", "   "] as [String?] {
+            XCTAssertEqual(
+                Console.url(orgSlug: slug)?.absoluteString, "https://www.edgee.ai",
+                "slug \(String(describing: slug)) should fall back to the root")
+        }
+    }
+
+    func testConsoleURLEncodesAnUnexpectedSlug() {
+        // Not a slug the API produces — asserts we percent-encode rather than
+        // return nil (which would make the button do nothing).
+        XCTAssertEqual(
+            Console.url(orgSlug: "a b")?.absoluteString, "https://www.edgee.ai/~/a%20b")
+    }
 }
