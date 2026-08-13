@@ -124,9 +124,57 @@ final class RelayManager: ObservableObject {
             case .stopped, .failed: start(target)
             }
         case .launch:
-            EdgeeCLI.launchDetached(["launch", target.id])
+            launchOneShot(target)
         case .terminalAgent:
             openInTerminal(target.id)
+        }
+    }
+
+    /// One-shot `edgee launch <id>` for a GUI app target. It exits in well under a
+    /// second, so there is nothing to supervise — but it very much can *fail*, and
+    /// the common case is not an edge case: `edgee launch codex-desktop` writes its
+    /// managed block into the agent's config and then `open`s the app, so if that
+    /// app is already running the open just hands off to the existing instance,
+    /// which isn't routed through Edgee. The CLI detects that, explains it on
+    /// stderr, and exits non-zero.
+    ///
+    /// So this is spawned with pipes and its exit status checked, rather than
+    /// fire-and-forget: swallowing stderr and ignoring the status left the tile
+    /// showing nothing at all on the click that fails most often — the button
+    /// looked broken. On a clean exit we drop straight back to `.stopped` (there's
+    /// no lasting process to represent); otherwise the CLI's own last stderr line
+    /// becomes the tile's failure reason.
+    private func launchOneShot(_ target: RelayTarget) {
+        guard processes[target.id] == nil else { return }
+        let id = target.id
+        states[id] = .starting
+        stopping.remove(id)
+
+        guard let spawned = EdgeeCLI.spawn(["launch", id]) else {
+            states[id] = .failed("could not start edgee")
+            return
+        }
+        processes[id] = spawned.process
+
+        spawned.process.terminationHandler = { [weak self] proc in
+            let status = proc.terminationStatus
+            let tail = spawned.stderr
+            Task { @MainActor in
+                guard let self else { return }
+                self.processes[id] = nil
+                // A quit-time `stopAll` may have interrupted it mid-launch; that's
+                // a shutdown, not a failure the user needs to see.
+                if self.stopping.remove(id) != nil || status == 0 {
+                    self.states[id] = .stopped
+                } else {
+                    // Read the tail after the actor hop, as in `start`, so the
+                    // stderr handler has had a chance to append the final chunk.
+                    self.states[id] =
+                        .failed(
+                            tail.text.split(whereSeparator: \.isNewline).last.map(String.init)
+                                ?? "launch exited (code \(status))")
+                }
+            }
         }
     }
 
