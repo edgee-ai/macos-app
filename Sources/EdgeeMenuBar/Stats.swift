@@ -6,12 +6,12 @@ struct Stats: Codable {
     let sessions: Int
     let totals: Totals
     let recent: [SessionBrief]
-    /// "api" (org-wide, windowed) or "local" (this machine's logs). Absent on
-    /// older CLIs → treated as local.
+    /// "api" (this account's usage in its org, windowed) or "local" (this
+    /// machine's logs). Absent on older CLIs → treated as local.
     let source: String?
     /// The API time window (e.g. "1h") when `source == "api"`.
     let window: String?
-    /// Live online-session count from the API when logged in.
+    /// Live online-session count for this account from the API when logged in.
     let activeSessions: UInt64?
 
     struct Totals: Codable {
