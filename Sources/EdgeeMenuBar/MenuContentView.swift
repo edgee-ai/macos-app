@@ -12,6 +12,10 @@ struct MenuContentView: View {
     @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
     @Environment(\.colorScheme) private var systemScheme
 
+    /// The panel's own window, so a log out can dismiss the panel (see
+    /// `PanelWindowReader`).
+    @State private var panelWindow: NSWindow?
+
     private var appearance: Appearance { Appearance(rawValue: appearanceRaw) ?? .system }
     /// The scheme the panel actually renders in (explicit choice, else the OS's).
     private var resolvedScheme: ColorScheme { appearance.colorScheme ?? systemScheme }
@@ -52,6 +56,12 @@ struct MenuContentView: View {
         }
         .environment(\.colorScheme, resolvedScheme)
         .preferredColorScheme(appearance.colorScheme)
+        .background(PanelWindowReader { panelWindow = $0 })
+        // A log out replaces the dashboard with the much shorter login card, and
+        // `MenuBarExtra(.window)` doesn't re-lay its panel out when the content
+        // shrinks underneath it — the window keeps its old frame and the card is
+        // drawn detached from it. Close instead; the next open sizes correctly.
+        .onChange(of: model.logoutCount) { panelWindow?.close() }
         .task { await model.reload() }
     }
 
@@ -324,5 +334,25 @@ struct MenuContentView: View {
     private var cachedSub: String? {
         guard let cached = model.stats?.totals.cachedInputTokens, cached > 0 else { return nil }
         return "\(TokenFormat.short(cached)) cached"
+    }
+}
+
+/// Hands back the window hosting the panel. `MenuBarExtra(.window)` exposes no
+/// way to dismiss its panel — `@Environment(\.dismiss)` is a no-op inside it —
+/// so we reach the window through a zero-sized AppKit view in the background.
+private struct PanelWindowReader: NSViewRepresentable {
+    let onWindow: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        // The view has no window until it's in the hierarchy, so read it after
+        // this layout pass.
+        DispatchQueue.main.async { onWindow(view.window) }
+        return view
+    }
+
+    /// The panel gets a fresh window on each open, so re-read on every update.
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { onWindow(view.window) }
     }
 }

@@ -13,6 +13,10 @@ final class MenuModel: ObservableObject {
     @Published private(set) var statsLoading = true
     @Published private(set) var loggingIn = false
     @Published private(set) var switching = false
+    /// Bumped after each explicit log out. `MenuContentView` watches it to
+    /// dismiss the panel — swapping the dashboard for the much shorter login
+    /// card in place leaves the panel's window at its old size.
+    @Published private(set) var logoutCount = 0
 
     func reload() async {
         // Only show the loading placeholders on a cold start; a refresh keeps the
@@ -59,5 +63,6 @@ final class MenuModel: ObservableObject {
         await EdgeeCLI.logout()
         switching = false
         await reload()
+        logoutCount += 1
     }
 }
