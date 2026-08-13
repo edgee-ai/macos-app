@@ -227,15 +227,20 @@ final class RelayManager: ObservableObject {
 
     private static func loginShell() -> String {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? ""
-        let name = URL(fileURLWithPath: shell).lastPathComponent
-        return posixLoginShells.contains(name) ? shell : "/bin/zsh"
+        // Absolute only: a bare `SHELL=fish` would have to resolve against the stub
+        // `PATH` the script runs under, which is the thing we're working around.
+        guard shell.hasPrefix("/") else { return "/bin/zsh" }
+        return posixLoginShells.contains(URL(fileURLWithPath: shell).lastPathComponent)
+            ? shell : "/bin/zsh"
     }
 
     private static let kittyBundleID = "net.kovidgoyal.kitty"
 
     /// The instance `launchNewKitty` started, so `activateKitty` can tell the user's
-    /// kitty from ours when both are running.
-    private static var edgeeKittyPID: pid_t?
+    /// kitty from ours when both are running. The app object rather than its pid: ours
+    /// quits with its last window, and a bare pid would go on matching whatever the
+    /// system recycled it for.
+    private static var edgeeKitty: NSRunningApplication?
 
     /// Where kitty is installed, if it is. LaunchServices knows about non-standard
     /// locations (nix, home-manager) that a path scan would miss.
@@ -305,6 +310,10 @@ final class RelayManager: ObservableObject {
         config.activates = true
         config.arguments = [
             "-o", "macos_quit_when_last_window_closed=yes",
+            // No socket of our own: the user's `listen_on` applies to this instance too,
+            // so it would race theirs for the same path — and then our own socket could
+            // be the one the next launch finds and hands the agent to.
+            "-o", "allow_remote_control=no",
             "--single-instance", "--instance-group", "edgee",
             "/bin/sh", script.path,
         ]
@@ -315,7 +324,12 @@ final class RelayManager: ObservableObject {
                     NSWorkspace.shared.open(script)
                     return
                 }
-                edgeeKittyPID = running?.processIdentifier
+                // On a repeat launch this is the `--single-instance` forwarder, already
+                // gone by the time we're called (LaunchServices reports it with a dead
+                // or `-1` pid). Keeping the instance we recorded is the point.
+                guard let running, running.processIdentifier > 0, !running.isTerminated
+                else { return }
+                edgeeKitty = running
             }
         }
     }
@@ -327,8 +341,11 @@ final class RelayManager: ObservableObject {
     @MainActor
     private static func activateKitty() {
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: kittyBundleID)
-        let theirs = instances.first { $0.processIdentifier != edgeeKittyPID }
-        (theirs ?? instances.first)?.activate()
+        var candidates = instances
+        if let ours = edgeeKitty, !ours.isTerminated {
+            candidates.removeAll { $0.processIdentifier == ours.processIdentifier }
+        }
+        (candidates.first ?? instances.first)?.activate()
     }
 
     /// How long a remote-control client gets before we give up on it.
