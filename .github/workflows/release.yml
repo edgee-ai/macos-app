@@ -1,7 +1,8 @@
 name: Release macOS app
 
-# Tag the app `vX.Y.Z` to bundle the edgee CLI release `vX.Y.Z` (the app version
-# tracks the CLI it embeds). Produces a DRAFT GitHub Release with a zipped,
+# Tag the app `vX.Y.Z` to release it. The edgee CLI it embeds is pinned
+# separately in `.edgee-cli-version`, so the app can ship a fix of its own
+# without a new CLI release. Produces a DRAFT GitHub Release with a zipped,
 # code-signed Edgee.app; publishing the draft triggers homebrew-cask.yml.
 on:
   push:
@@ -9,8 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version without leading v (must match a published edgee CLI release, e.g. 0.4.0)"
+        description: "App version without leading v (e.g. 0.5.1)"
         required: true
+        type: string
+      cli_version:
+        description: "edgee CLI to embed, without leading v — must be a published edgee release. Defaults to .edgee-cli-version"
+        required: false
         type: string
 
 permissions:
@@ -36,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve version
+      - name: Resolve versions
         id: v
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -44,9 +49,17 @@ jobs:
           else
             V="${GITHUB_REF_NAME#v}"
           fi
-          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad version '$V'"; exit 1; }
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad app version '$V'"; exit 1; }
+          # The CLI to embed: dispatch input wins, else the pinned file, so a tag
+          # build embeds exactly what the tagged commit says it does.
+          CLI="${{ inputs.cli_version }}"
+          CLI="${CLI:-$(tr -d '[:space:]' < .edgee-cli-version)}"
+          CLI="${CLI#v}"
+          [[ "$CLI" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad edgee CLI version '$CLI'"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "cli=$CLI" >> "$GITHUB_OUTPUT"
+          echo "app $V, embedding edgee CLI $CLI"
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -54,10 +67,10 @@ jobs:
 
       # edgee is public, so download the release asset directly — no token needed
       # (a fine-grained PAT scoped to the tap can't read edgee-ai/edgee anyway).
-      # The edgee release for this version must be PUBLISHED (draft assets 404).
-      - name: Fetch matching edgee CLI (arm64 darwin)
+      # The pinned edgee release must be PUBLISHED (draft assets 404).
+      - name: Fetch pinned edgee CLI (arm64 darwin)
         run: |
-          URL="https://github.com/edgee-ai/edgee/releases/download/${{ steps.v.outputs.tag }}/edgee.aarch64-apple-darwin"
+          URL="https://github.com/edgee-ai/edgee/releases/download/v${{ steps.v.outputs.cli }}/edgee.aarch64-apple-darwin"
           curl -fSL --retry 5 --retry-all-errors -o edgee-cli "$URL"
           chmod +x edgee-cli
           ./edgee-cli --version
@@ -76,11 +89,13 @@ jobs:
 
       - name: Build + package (arm64)
         run: |
-          make dist EDGEE_BIN="$PWD/edgee-cli" CODESIGN_IDENTITY="${APPLE_SIGN_IDENTITY:--}"
+          make dist EDGEE_BIN="$PWD/edgee-cli" \
+            APP_VERSION="${{ steps.v.outputs.version }}" \
+            CODESIGN_IDENTITY="${APPLE_SIGN_IDENTITY:--}"
           BUILT=$(ls dist/Edgee-*.zip)
           BUILT_VER=$(basename "$BUILT" .zip | sed 's/^Edgee-//')
           if [ "$BUILT_VER" != "${{ steps.v.outputs.version }}" ]; then
-            echo "::error::bundle version $BUILT_VER != tag ${{ steps.v.outputs.version }} — tag the app to match the edgee CLI it bundles"
+            echo "::error::bundle version $BUILT_VER != app version ${{ steps.v.outputs.version }} — version stamping went wrong"
             exit 1
           fi
 

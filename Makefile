@@ -8,6 +8,12 @@ DIST     := dist
 # ../edgee/target/release/edgee).
 EDGEE_BIN ?= $(shell command -v edgee 2>/dev/null)
 
+# The app's own version, stamped into the bundle. Empty (the default) falls back
+# to the embedded CLI's version, which is all a local build needs. release.yml
+# passes the app tag here — the app and the CLI it embeds version independently,
+# so releasing an app-only fix doesn't need a new CLI release.
+APP_VERSION ?=
+
 # Codesigning identity. Default `-` = ad-hoc (local/dev; not distributable).
 # For a notarizable build, override with a Developer ID and hardened runtime is
 # added automatically:
@@ -57,11 +63,13 @@ bundle: build
 	cp Assets/Edgee.icns "$(APP)/Contents/Resources/Edgee.icns"
 	cp Assets/MenuBarIcon.pdf "$(APP)/Contents/Resources/MenuBarIcon.pdf"
 	cp Info.plist "$(APP)/Contents/Info.plist"
-	@VERSION=$$("$(EDGEE_BIN)" --version 2>/dev/null | sed -E 's/[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
-		VERSION=$${VERSION:-0.0.0}; \
+	@CLI_VERSION=$$("$(EDGEE_BIN)" --version 2>/dev/null | sed -E 's/[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+		CLI_VERSION=$${CLI_VERSION:-0.0.0}; \
+		VERSION="$(APP_VERSION)"; VERSION=$${VERSION:-$$CLI_VERSION}; \
 		/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $$VERSION" "$(APP)/Contents/Info.plist"; \
 		/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $$VERSION" "$(APP)/Contents/Info.plist"; \
-		echo "stamped bundle version $$VERSION (from embedded edgee CLI)"
+		/usr/libexec/PlistBuddy -c "Set :EdgeeCLIVersion $$CLI_VERSION" "$(APP)/Contents/Info.plist"; \
+		echo "stamped bundle version $$VERSION (embedded edgee CLI $$CLI_VERSION)"
 	$(CODESIGN) "$(APP)/Contents/Resources/edgee"
 	$(CODESIGN) "$(APP)"
 
