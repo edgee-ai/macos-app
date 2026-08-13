@@ -244,7 +244,9 @@ struct MenuContentView: View {
 
     private var openConsole: some View {
         Button {
-            if let url = URL(string: "https://www.edgee.ai") { NSWorkspace.shared.open(url) }
+            if let url = Console.url(orgSlug: model.status?.orgSlug) {
+                NSWorkspace.shared.open(url)
+            }
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: "macwindow").font(.system(size: 13, weight: .semibold))
