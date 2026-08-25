@@ -32,13 +32,6 @@ cask "edgee-menubar" do
   ]
 
   caveats <<~EOS
-    Edgee.app is ad-hoc signed (not yet notarized by Apple), so Gatekeeper blocks
-    it on first open. Clear the quarantine flag once:
-
-      xattr -dr com.apple.quarantine "#{appdir}/Edgee.app"
-
-    (or right-click Edgee.app in Finder → Open the first time).
-
     This also installs the `edgee` CLI on your PATH; it conflicts with the
     standalone `edgee` formula, so `brew unlink edgee` first if you have it.
   EOS

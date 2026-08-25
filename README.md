@@ -103,22 +103,24 @@ upload the zip to a release, paste `version`/`sha256` into the cask, copy to the
 Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via
 `lipo`) is a follow-up.
 
-### Apple signing & notarization (planned)
+### Apple signing & notarization
 
-The app ships **ad-hoc signed** today (hence the one-time `xattr` quarantine
-step). The pipeline is already wired for Developer-ID signing + notarization — it stays
-dormant until these secrets exist, at which point `release.yml` signs with a
-hardened runtime, notarizes, and staples automatically (no code change):
+When configured with the repo secrets below, `release.yml` produces Developer ID
+signed (hardened runtime), notarized, and stapled releases, so Gatekeeper accepts
+them with no quarantine-clearing step.
 
-- `APPLE_SIGN_IDENTITY` — e.g. `Developer ID Application: Edgee, Inc. (TEAMID)`
+- `APPLE_SIGN_IDENTITY` — `Developer ID Application: Edgee Cloud (VC4Z4MZLM6)`
 - `APPLE_CERT_P12` (base64 of the exported `.p12`) + `APPLE_CERT_PASSWORD`
 - `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8` (base64 App Store
   Connect API key, for `notarytool`)
 
-Setup: enroll in the Apple Developer Program, create a *Developer ID Application*
-cert (export `.p12`) and an App Store Connect API key, add the secrets above,
-then drop the quarantine caveat (and the arch gate) from the cask once builds are
-notarized. Locally: `make dist CODESIGN_IDENTITY="Developer ID Application: … (TEAMID)"`.
+All five go together: the signing *and* notarizing steps both key off
+`APPLE_SIGN_IDENTITY`, so setting it without the API key secrets fails the
+release. Leave it unset and builds fall back to ad-hoc signing.
+
+The `.p12` holds the signing private key — Apple cannot reissue it, only revoke
+and replace the certificate, so keep a backup outside CI. Locally:
+`make dist CODESIGN_IDENTITY="Developer ID Application: Edgee Cloud (VC4Z4MZLM6)"`.
 
 ## Layout
 
