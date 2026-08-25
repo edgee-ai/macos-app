@@ -25,7 +25,7 @@ env:
   # The edgee CLI release a tag push embeds — a manual run can override it with
   # the cli_version field, and the value lives with the tagged commit either way,
   # so rebuilding a tag rebuilds the same bundle. Bump it to move the CLI.
-  EDGEE_CLI: "0.5.2"
+  EDGEE_CLI: "0.5.5"
 
 concurrency:
   group: release-macos-${{ github.ref }}
