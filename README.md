@@ -105,9 +105,9 @@ Currently an **arm64-only** build (Apple Silicon). Universal (arm64 + x86_64 via
 
 ### Apple signing & notarization
 
-Releases are Developer ID signed with a hardened runtime, then notarized and
-stapled by `release.yml`, so Gatekeeper accepts them with no `xattr` step. Driven
-by these repo secrets:
+When configured with the repo secrets below, `release.yml` produces Developer ID
+signed (hardened runtime), notarized, and stapled releases, so Gatekeeper accepts
+them with no quarantine-clearing step.
 
 - `APPLE_SIGN_IDENTITY` — `Developer ID Application: Edgee Cloud (VC4Z4MZLM6)`
 - `APPLE_CERT_P12` (base64 of the exported `.p12`) + `APPLE_CERT_PASSWORD`
