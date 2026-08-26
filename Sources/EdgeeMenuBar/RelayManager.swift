@@ -23,12 +23,24 @@ struct RelayTarget: Identifiable {
     let proxyOnly: Bool
     /// App bundle paths used to detect installation. Empty = always available.
     let detectPaths: [String]
+    /// Executable name marking a CLI agent as installed, looked up in the user's
+    /// search path by `AgentDetection`. nil for GUI targets (they use `detectPaths`).
+    let detectCommand: String?
     /// How tapping the tile drives this target.
     let mode: LaunchMode
 
     var installed: Bool {
         if detectPaths.isEmpty { return true }
         return detectPaths.contains { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// Whether we can see this target on the machine — a GUI bundle that exists, or a
+    /// CLI whose binary turned up in `detected`. Drives ordering only: unlike
+    /// `installed`, a false here never disables the tile, because CLI detection can't
+    /// see behind a version-manager shim (see `AgentDetection`).
+    func available(detected: Set<String>) -> Bool {
+        if let detectCommand { return detected.contains(detectCommand) }
+        return installed
     }
 
     /// The installed app bundle path (first existing detectPath), used to render
@@ -44,31 +56,74 @@ struct RelayTarget: Identifiable {
         ]
     }
 
-    /// The targets offered in the UI. Editors launch behind the relay; the
-    /// proxy-only entry is for pointing an external app (Claude Desktop) at it.
+    /// The targets offered in the UI, in the order they appear when nothing is
+    /// detected — the terminal coding agents first (that's what most of this is for),
+    /// then the GUI apps. `ordered(detected:)` promotes what the user actually has.
+    ///
+    /// Ids are the CLI's own `edgee launch <id>` subcommands, and every terminal agent
+    /// happens to ship a binary named after its id.
     static let all: [RelayTarget] = [
         RelayTarget(
             id: "claude", name: "Claude Code", symbol: "asterisk.circle",
-            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
-        RelayTarget(
-            id: "claude-desktop", name: "Claude Desktop", symbol: "network",
-            proxyOnly: false, detectPaths: appPaths("Claude.app"), mode: .relay),
+            proxyOnly: false, detectPaths: [], detectCommand: "claude", mode: .terminalAgent),
         RelayTarget(
             id: "codex", name: "Codex", symbol: "terminal",
-            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
-        RelayTarget(
-            id: "codex-desktop", name: "Codex Desktop", symbol: "sparkles",
-            proxyOnly: false, detectPaths: appPaths("ChatGPT.app"), mode: .launch),
-        RelayTarget(
-            id: "cursor", name: "Cursor", symbol: "cursorarrow.rays",
-            proxyOnly: false, detectPaths: appPaths("Cursor.app"), mode: .relay),
-        RelayTarget(
-            id: "copilot-vscode", name: "VS Code (Copilot)", symbol: "chevron.left.forwardslash.chevron.right",
-            proxyOnly: false, detectPaths: appPaths("Visual Studio Code.app"), mode: .relay),
+            proxyOnly: false, detectPaths: [], detectCommand: "codex", mode: .terminalAgent),
         RelayTarget(
             id: "opencode", name: "OpenCode", symbol: "curlybraces",
-            proxyOnly: false, detectPaths: [], mode: .terminalAgent),
+            proxyOnly: false, detectPaths: [], detectCommand: "opencode", mode: .terminalAgent),
+        RelayTarget(
+            id: "crush", name: "Crush", symbol: "wand.and.stars",
+            proxyOnly: false, detectPaths: [], detectCommand: "crush", mode: .terminalAgent),
+        RelayTarget(
+            id: "codebuddy", name: "CodeBuddy", symbol: "cube",
+            proxyOnly: false, detectPaths: [], detectCommand: "codebuddy", mode: .terminalAgent),
+        RelayTarget(
+            id: "pi", name: "Pi", symbol: "function",
+            proxyOnly: false, detectPaths: [], detectCommand: "pi", mode: .terminalAgent),
+        RelayTarget(
+            id: "kimi", name: "Kimi Code", symbol: "moon.stars",
+            proxyOnly: false, detectPaths: [], detectCommand: "kimi", mode: .terminalAgent),
+        RelayTarget(
+            id: "kilo", name: "Kilo Code", symbol: "scalemass",
+            proxyOnly: false, detectPaths: [], detectCommand: "kilo", mode: .terminalAgent),
+        RelayTarget(
+            id: "cursor", name: "Cursor", symbol: "cursorarrow.rays",
+            proxyOnly: false, detectPaths: appPaths("Cursor.app"), detectCommand: nil,
+            mode: .relay),
+        RelayTarget(
+            id: "copilot-vscode", name: "VS Code (Copilot)",
+            symbol: "chevron.left.forwardslash.chevron.right",
+            proxyOnly: false, detectPaths: appPaths("Visual Studio Code.app"),
+            detectCommand: nil, mode: .relay),
+        RelayTarget(
+            id: "claude-desktop", name: "Claude Desktop", symbol: "network",
+            proxyOnly: false, detectPaths: appPaths("Claude.app"), detectCommand: nil,
+            mode: .relay),
+        RelayTarget(
+            id: "codex-desktop", name: "Codex Desktop", symbol: "sparkles",
+            proxyOnly: false, detectPaths: appPaths("ChatGPT.app"), detectCommand: nil,
+            mode: .launch),
     ]
+
+    /// The launch card's two halves: the quick links — what we can see on this
+    /// machine, plus anything the user enrolled by hand — and the rest, offered under
+    /// "enroll" instead of spending a tile on an agent they don't have. Each half
+    /// keeps its declared order.
+    ///
+    /// All-or-nothing fallback: if nothing is detected and nothing is enrolled
+    /// (detection hasn't landed yet, or the login shell wouldn't answer) every target
+    /// is a quick link — an empty grid reads as broken, and an enroll menu holding the
+    /// entire roster isn't a shortlist.
+    static func split(
+        _ targets: [RelayTarget] = all, detected: Set<String>, enrolled: Set<String>
+    ) -> (quickLinks: [RelayTarget], enrollable: [RelayTarget]) {
+        let groups = Dictionary(grouping: targets) {
+            $0.available(detected: detected) || enrolled.contains($0.id)
+        }
+        guard let quickLinks = groups[true], !quickLinks.isEmpty else { return (targets, []) }
+        return (quickLinks, groups[false] ?? [])
+    }
 }
 
 enum RelayRunState: Equatable {
@@ -89,6 +144,14 @@ final class RelayManager: ObservableObject {
     private static let readyGrace: Duration = .milliseconds(1200)
 
     @Published private(set) var states: [String: RelayRunState] = [:]
+    /// Executable names of the CLI agents found on this machine, so the launch grid
+    /// can show the ones the user actually has. Empty until detection lands.
+    @Published private(set) var detectedAgents: Set<String> = []
+    /// Ids the user pinned via "enroll an agent" — quick links even when detection
+    /// can't see them, which covers both an agent behind a version-manager shim and
+    /// one they're about to install. Persisted, since enrolling reads as a choice that
+    /// should stick.
+    @Published private(set) var enrolled: Set<String> = RelayManager.loadEnrolled()
     private var processes: [String: Process] = [:]
     /// Ids we've asked to stop, so the termination handler can tell a
     /// user-requested shutdown from an unexpected exit/crash.
@@ -105,6 +168,48 @@ final class RelayManager: ObservableObject {
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.stopAll() }
+        }
+        refreshDetection()
+    }
+
+    private func applyDetection(_ found: Set<String>) { detectedAgents = found }
+
+    private static let enrolledKey = "enrolledTargets"
+
+    private static func loadEnrolled() -> Set<String> {
+        let stored = UserDefaults.standard.stringArray(forKey: enrolledKey) ?? []
+        // Drop ids we no longer ship, so a target renamed or removed between versions
+        // can't keep a phantom tile in the grid.
+        let known = Set(RelayTarget.all.map(\.id))
+        return Set(stored).intersection(known)
+    }
+
+    /// Pin a target as a quick link and run it straight away — enrolling is what the
+    /// user does *in order to* launch something, so it shouldn't take two clicks. It
+    /// also has to become a tile first: the run's status dot and failure tooltip live
+    /// there, and the CLI's "not installed, install it with…" is exactly what someone
+    /// enrolling an agent they don't have yet needs to see.
+    func enroll(_ target: RelayTarget) {
+        enrolled.insert(target.id)
+        UserDefaults.standard.set(Array(enrolled), forKey: Self.enrolledKey)
+        toggle(target)
+    }
+
+    /// Drop a hand-enrolled quick link. A detected agent stays in the grid regardless
+    /// — detection, not this set, is what put it there.
+    func unenroll(_ id: String) {
+        guard enrolled.remove(id) != nil else { return }
+        UserDefaults.standard.set(Array(enrolled), forKey: Self.enrolledKey)
+    }
+
+    /// Look up which CLI agents are installed. Runs a login shell, so it's kept off
+    /// the main actor; the grid re-sorts when the result arrives. Cheap enough to
+    /// repeat when the panel opens — an agent installed mid-session should show up.
+    func refreshDetection() {
+        let commands = RelayTarget.all.compactMap(\.detectCommand)
+        Task.detached(priority: .utility) { [weak self] in
+            let found = AgentDetection.detect(commands)
+            await self?.applyDetection(found)
         }
     }
 
@@ -242,16 +347,16 @@ final class RelayManager: ObservableObject {
     /// The `.command` script both kitty and the default handler run. Returns nil if it
     /// can't be written.
     private static func writeLaunchScript(edgee: String, id: String) -> URL? {
-        let shell = loginShell()
+        let shell = AgentDetection.loginShell()
         // `cd "$HOME"` because a GUI-launched terminal can start us in `/`.
-        let command = "cd \"$HOME\" && exec \(quoted(edgee)) launch \(id)"
+        let command = "cd \"$HOME\" && exec \(AgentDetection.shellQuoted(edgee)) launch \(id)"
         let script = """
             #!/bin/sh
             # Shell-startup guards without the PATH they belong to — see above.
             for v in $(/usr/bin/env | /usr/bin/sed -n 's/^\\(__[A-Za-z0-9_]*\\)=.*/\\1/p'); do
                 unset "$v"
             done
-            exec \(quoted(shell)) -lc \(quoted(command))
+            exec \(AgentDetection.shellQuoted(shell)) -lc \(AgentDetection.shellQuoted(command))
 
             """
 
@@ -265,21 +370,6 @@ final class RelayManager: ObservableObject {
             return nil
         }
         return url
-    }
-
-    /// Login shells that run the script's command line as written. `$SHELL` is whatever
-    /// the user set, and the exotic ones get this subtly wrong: nu treats `"$HOME"` as a
-    /// literal, csh/tcsh honour `-l` only when it's the sole flag and so quietly drop
-    /// the login shell that the `PATH` fix depends on. Fall back to macOS's own default.
-    private static let posixLoginShells: Set<String> = ["zsh", "bash", "sh", "dash", "ksh", "fish"]
-
-    private static func loginShell() -> String {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? ""
-        // Absolute only: a bare `SHELL=fish` would have to resolve against the stub
-        // `PATH` the script runs under, which is the thing we're working around.
-        guard shell.hasPrefix("/") else { return "/bin/zsh" }
-        return posixLoginShells.contains(URL(fileURLWithPath: shell).lastPathComponent)
-            ? shell : "/bin/zsh"
     }
 
     private static let kittyBundleID = "net.kovidgoyal.kitty"
@@ -425,11 +515,6 @@ final class RelayManager: ObservableObject {
             return false
         }
         return process.terminationStatus == 0
-    }
-
-    /// Single-quote a string for POSIX `sh`.
-    private static func quoted(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     func start(_ target: RelayTarget) {

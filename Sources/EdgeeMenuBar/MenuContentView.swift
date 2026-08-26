@@ -33,7 +33,7 @@ struct MenuContentView: View {
                 lastHour
                 statTiles
                 tokens
-                LaunchGrid()
+                LaunchStrip()
                 openConsole
             }
             footer.padding(.top, 2)

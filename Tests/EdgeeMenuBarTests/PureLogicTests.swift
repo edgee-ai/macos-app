@@ -63,6 +63,11 @@ final class PureLogicTests: XCTestCase {
             "claude": .terminalAgent,
             "codex": .terminalAgent,
             "opencode": .terminalAgent,
+            "crush": .terminalAgent,
+            "codebuddy": .terminalAgent,
+            "pi": .terminalAgent,
+            "kimi": .terminalAgent,
+            "kilo": .terminalAgent,
             "codex-desktop": .launch,
             "claude-desktop": .relay,
             "cursor": .relay,
@@ -72,6 +77,60 @@ final class PureLogicTests: XCTestCase {
         for (id, mode) in expected {
             XCTAssertEqual(byId[id]?.mode, mode, "wrong launch mode for \(id)")
             XCTAssertFalse(byId[id]?.name.isEmpty ?? true, "empty name for \(id)")
+        }
+    }
+
+    /// Every terminal agent is detected by a binary named after its `edgee launch`
+    /// subcommand; GUI targets are detected by bundle path instead.
+    func testTerminalAgentsDetectByCommandNamedAfterTheirId() {
+        for target in RelayTarget.all {
+            switch target.mode {
+            case .terminalAgent:
+                XCTAssertEqual(target.detectCommand, target.id, "detectCommand for \(target.id)")
+                XCTAssertTrue(target.detectPaths.isEmpty, "\(target.id) is a CLI, not a bundle")
+            case .relay, .launch:
+                XCTAssertNil(target.detectCommand, "GUI target \(target.id) has a command")
+                XCTAssertFalse(target.detectPaths.isEmpty, "no detectPaths for \(target.id)")
+            }
+        }
+    }
+
+    // MARK: Launch-grid split (quick links vs "enroll an agent")
+
+    func testSplitKeepsDetectedAgentsAsQuickLinks() {
+        let (quick, enrollable) = RelayTarget.split(detected: ["kilo", "crush"], enrolled: [])
+        XCTAssertEqual(quick.prefix(2).map(\.id), ["crush", "kilo"], "declared order kept")
+        XCTAssertFalse(quick.contains { $0.id == "claude" }, "undetected CLI is not a quick link")
+        XCTAssertTrue(enrollable.contains { $0.id == "claude" })
+        // The two halves are the whole roster, once each.
+        XCTAssertEqual(
+            Set(quick.map(\.id)).union(enrollable.map(\.id)), Set(RelayTarget.all.map(\.id)))
+        XCTAssertEqual(quick.count + enrollable.count, RelayTarget.all.count)
+    }
+
+    func testSplitTreatsEnrolledAsQuickLinksEvenWhenUndetected() {
+        let (quick, enrollable) = RelayTarget.split(detected: ["crush"], enrolled: ["kimi"])
+        XCTAssertEqual(quick.map(\.id).filter { $0 == "kimi" }, ["kimi"])
+        XCTAssertFalse(enrollable.contains { $0.id == "kimi" })
+    }
+
+    /// Detection hasn't landed (or the login shell wouldn't answer): show everything
+    /// rather than an empty grid with the whole roster hidden behind "enroll".
+    func testSplitWithNothingDetectedShowsTheWholeRoster() {
+        // A GUI target whose bundle happens to exist on the test machine would count
+        // as detected, so exercise the fallback on the CLI agents alone.
+        let cliOnly = RelayTarget.all.filter { $0.mode == .terminalAgent }
+        let (quick, enrollable) = RelayTarget.split(cliOnly, detected: [], enrolled: [])
+        XCTAssertEqual(quick.map(\.id), cliOnly.map(\.id))
+        XCTAssertTrue(enrollable.isEmpty)
+    }
+
+    /// Detection must never gate the tile: an undetected CLI agent is only sorted
+    /// last, because a version-manager shim can hide a binary we can't see.
+    func testUndetectedCLIAgentsStayInstalled() {
+        for target in RelayTarget.all where target.mode == .terminalAgent {
+            XCTAssertTrue(target.installed, "\(target.id) must stay clickable")
+            XCTAssertFalse(target.available(detected: []), "\(target.id) can't be available")
         }
     }
 
