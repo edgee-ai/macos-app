@@ -34,9 +34,24 @@ embedded CLI's version, and always records that CLI's version in the plist's
 
 ## Terminal for the TUI agents
 
-Claude Code, Codex and OpenCode need a TTY, so tapping them opens a terminal
-window running `edgee launch <id>`. By default that's whatever app handles
-`.command` files (Terminal.app unless you changed it).
+The CLI agents (Claude Code, Codex, OpenCode, Crush, CodeBuddy, Pi, Kimi Code,
+Kilo Code) need a TTY, so tapping them opens a terminal window running
+`edgee launch <id>`. By default that's whatever app handles `.command` files
+(Terminal.app unless you changed it).
+
+## Which agents get a chip
+
+The launch grid only holds the agents you actually have: GUI apps are detected
+from their bundle, CLI agents by looking for their binary in the `PATH` your
+login shell reports (a GUI app doesn't inherit it). It's two rows at most — past
+six chips the rest collapse into **+N more**.
+
+Everything else Edgee can route sits behind the dashed **Enroll** chip. Picking
+one pins it as a chip and launches it, so the CLI's own install hint lands in a
+terminal window where you can act on it; that's also the way in for an agent
+hidden behind a version-manager shim, which no `PATH` we can reconstruct will
+find. Enrolled agents are listed with a checkmark in the same popover — click one
+to drop it again.
 
 kitty users get a window in their **own running instance** instead, if kitty's
 remote control is on — add to `kitty.conf`:
