@@ -133,6 +133,30 @@ final class PureLogicTests: XCTestCase {
             ["installed-desktop"])
     }
 
+    func testOnlyRelayTargetsNeedPersistentProxy() {
+        for target in RelayTarget.all {
+            switch target.mode {
+            case .relay:
+                XCTAssertTrue(target.needsPersistentProxy, target.id)
+            case .launch, .terminalAgent:
+                XCTAssertFalse(target.needsPersistentProxy, target.id)
+            }
+        }
+    }
+
+    func testRunningWithoutProxyState() {
+        let relay = RelayTarget.all.first { $0.id == "cursor" }!
+        let oneShot = RelayTarget.all.first { $0.id == "codex-desktop" }!
+
+        XCTAssertTrue(relay.isRunningWithoutProxy(appIsRunning: true, relayState: .stopped))
+        XCTAssertTrue(
+            relay.isRunningWithoutProxy(appIsRunning: true, relayState: .failed("exited")))
+        XCTAssertFalse(relay.isRunningWithoutProxy(appIsRunning: true, relayState: .starting))
+        XCTAssertFalse(relay.isRunningWithoutProxy(appIsRunning: true, relayState: .running))
+        XCTAssertFalse(relay.isRunningWithoutProxy(appIsRunning: false, relayState: .stopped))
+        XCTAssertFalse(oneShot.isRunningWithoutProxy(appIsRunning: true, relayState: .stopped))
+    }
+
     // MARK: Launch-grid split (quick links vs "enroll an agent")
 
     func testSplitKeepsDetectedAgentsAsQuickLinks() {

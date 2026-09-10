@@ -36,7 +36,9 @@ embedded CLI's version, and always records that CLI's version in the plist's
 
 The menubar shows desktop apps only, and only when their app bundle is installed
 in `/Applications` or `~/Applications`. Terminal agents stay available through
-the `edgee` CLI but do not appear in the menubar.
+the `edgee` CLI but do not appear in the menubar. If a relay-capable desktop app
+is open without a menubar-managed proxy, its chip and the desktop-app card show
+an orange warning telling you to quit and relaunch it through Edgee.
 
 ## Install (Homebrew cask)
 

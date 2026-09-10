@@ -39,6 +39,21 @@ struct RelayTarget: Identifiable {
         }
     }
 
+    /// Relay targets need a long-running Edgee proxy alongside the desktop app.
+    /// One-shot launch targets configure and open the app but have no proxy process.
+    var needsPersistentProxy: Bool {
+        if case .relay = mode { return true }
+        return false
+    }
+
+    func isRunningWithoutProxy(appIsRunning: Bool, relayState: RelayRunState) -> Bool {
+        guard needsPersistentProxy, appIsRunning else { return false }
+        switch relayState {
+        case .running, .starting: return false
+        case .stopped, .failed: return true
+        }
+    }
+
     var installed: Bool {
         if detectPaths.isEmpty { return true }
         return detectPaths.contains { FileManager.default.fileExists(atPath: $0) }
@@ -57,6 +72,12 @@ struct RelayTarget: Identifiable {
     /// the app's real macOS icon. `nil` → fall back to the SF Symbol.
     var appBundlePath: String? {
         detectPaths.first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// Used with `NSWorkspace.runningApplications` to recognize an open app even
+    /// when it was launched outside this menubar process.
+    var appBundleIdentifier: String? {
+        appBundlePath.flatMap { Bundle(path: $0)?.bundleIdentifier }
     }
 
     private static func appPaths(_ name: String) -> [String] {
@@ -165,6 +186,8 @@ final class RelayManager: ObservableObject {
     private static let readyGrace: Duration = .milliseconds(1200)
 
     @Published private(set) var states: [String: RelayRunState] = [:]
+    /// Installed desktop targets whose GUI process macOS currently reports as open.
+    @Published private(set) var runningDesktopApps: Set<String> = []
     /// Executable names of the CLI agents found on this machine, so the launch grid
     /// can show the ones the user actually has. Empty until detection lands.
     @Published private(set) var detectedAgents: Set<String> = []
@@ -179,6 +202,7 @@ final class RelayManager: ObservableObject {
     private var stopping: Set<String> = []
 
     private var terminationObserver: (any NSObjectProtocol)?
+    private var workspaceObservers: [any NSObjectProtocol] = []
 
     init() {
         // Relays are detached background processes, so tear them down on the
@@ -190,6 +214,17 @@ final class RelayManager: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.stopAll() }
         }
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers = [
+            NSWorkspace.didLaunchApplicationNotification,
+            NSWorkspace.didTerminateApplicationNotification,
+        ].map { name in
+            workspaceCenter.addObserver(forName: name, object: nil, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshRunningDesktopApps() }
+            }
+        }
+        refreshRunningDesktopApps()
         refreshDetection()
     }
 
@@ -238,9 +273,33 @@ final class RelayManager: ObservableObject {
         if let terminationObserver {
             NotificationCenter.default.removeObserver(terminationObserver)
         }
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
     }
 
     func state(_ id: String) -> RelayRunState { states[id] ?? .stopped }
+
+    /// True when the desktop app is open but this menubar has no live proxy for it.
+    /// `.starting` is treated as covered to avoid flashing a warning while a relay
+    /// launched from the tile is still inside its readiness grace period.
+    func isRunningWithoutProxy(_ target: RelayTarget) -> Bool {
+        target.isRunningWithoutProxy(
+            appIsRunning: runningDesktopApps.contains(target.id),
+            relayState: state(target.id))
+    }
+
+    private func refreshRunningDesktopApps() {
+        let runningBundleIDs = Set(
+            NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        runningDesktopApps = Set(
+            RelayTarget.installedDesktopApps.compactMap { target in
+                guard let bundleID = target.appBundleIdentifier,
+                    runningBundleIDs.contains(bundleID)
+                else { return nil }
+                return target.id
+            })
+    }
 
     func toggle(_ target: RelayTarget) {
         switch target.mode {

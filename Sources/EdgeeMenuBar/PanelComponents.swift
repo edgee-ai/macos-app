@@ -141,6 +141,10 @@ struct LaunchStrip: View {
         RelayTarget.installedDesktopApps.filter { relays.state($0.id) == .running }.count
     }
 
+    private var unproxied: [RelayTarget] {
+        RelayTarget.installedDesktopApps.filter(relays.isRunningWithoutProxy)
+    }
+
     /// Installed desktop apps, running ones first — an active session is the thing you're
     /// most likely to want back, and it must never be the one hidden under `+N`.
     private var quickLinks: [RelayTarget] {
@@ -160,7 +164,7 @@ struct LaunchStrip: View {
                 Spacer()
                 Text(runningCount == 0 ? "none active" : "\(runningCount) active")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.secondaryText)
+                    .foregroundStyle(unproxied.isEmpty ? Theme.secondaryText : .orange)
             }
             .padding(.bottom, 12)
 
@@ -168,7 +172,7 @@ struct LaunchStrip: View {
                 ForEach(inline) { target in
                     AgentChip(
                         target: target, state: relays.state(target.id),
-                        available: true
+                        available: true, unproxied: relays.isRunningWithoutProxy(target)
                     ) {
                         relays.toggle(target)
                     }
@@ -181,7 +185,8 @@ struct LaunchStrip: View {
                                 ForEach(overflow) { target in
                                     AgentRow(
                                         target: target, state: relays.state(target.id),
-                                        available: true
+                                        available: true,
+                                        unproxied: relays.isRunningWithoutProxy(target)
                                     ) {
                                         showingOverflow = false
                                         relays.toggle(target)
@@ -192,11 +197,32 @@ struct LaunchStrip: View {
                 }
 
             }
+
+            if !unproxied.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.top, 1)
+                    Text(unproxiedMessage)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 10)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 16)
         .padding(.bottom, 16)
         .cardSurface()
+    }
+
+    private var unproxiedMessage: String {
+        let names = unproxied.map(\.name).joined(separator: ", ")
+        let verb = unproxied.count == 1 ? "is" : "are"
+        return "\(names) \(verb) running without the Edgee proxy. Quit and relaunch here to route through Edgee."
     }
 }
 
@@ -237,6 +263,7 @@ struct AgentChip: View {
     /// Detected on this machine. Only shades the chip back; it never disables it (see
     /// `RelayTarget.available`) — a hand-enrolled agent sits here undetected.
     let available: Bool
+    var unproxied: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -262,15 +289,24 @@ struct AgentChip: View {
 
     @ViewBuilder
     private var statusDot: some View {
-        switch state {
-        case .running: PulseDot(color: Theme.running, diameter: 6)
-        case .starting: PulseDot(color: .orange, diameter: 6)
-        case .failed: PulseDot(color: .red, diameter: 6)
-        case .stopped: EmptyView()
+        if unproxied, state == .stopped {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.orange)
+        } else {
+            switch state {
+            case .running: PulseDot(color: Theme.running, diameter: 6)
+            case .starting: PulseDot(color: .orange, diameter: 6)
+            case .failed: PulseDot(color: .red, diameter: 6)
+            case .stopped: EmptyView()
+            }
         }
     }
 
     private var helpText: String {
+        if unproxied {
+            return "\(target.name) is running without the Edgee proxy. Quit it and relaunch from here."
+        }
         if !target.installed { return "\(target.name) is not installed" }
         if !available, state == .stopped {
             return "Launch \(target.name) — not detected on this machine"
@@ -384,6 +420,7 @@ struct AgentRow: View {
     let target: RelayTarget
     let state: RelayRunState
     let available: Bool
+    var unproxied: Bool = false
     var checked: Bool = false
     let action: () -> Void
 
@@ -418,7 +455,11 @@ struct AgentRow: View {
 
     @ViewBuilder
     private var trailing: some View {
-        if checked {
+        if unproxied, state == .stopped {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.orange)
+        } else if checked {
             Image(systemName: "checkmark")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(Theme.brand)
