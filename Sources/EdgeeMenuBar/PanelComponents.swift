@@ -58,6 +58,7 @@ struct StatTile: View {
                     .font(Theme.serif(30))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.65)
                 if let dot { PulseDot(color: dot) }
             }
         }

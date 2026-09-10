@@ -23,6 +23,9 @@ struct Stats: Codable {
         // still decodes instead of nil-ing the whole struct — the UI just hides
         // the "cached" sub-line when it's absent.
         let cachedInputTokens: UInt64?
+        /// Estimated model spend in US dollars. Optional so an older external CLI
+        /// can still populate the rest of the dashboard.
+        let costUsd: Double?
         let tokenCostSavings: UInt64
         let uncompressedToolsTokens: UInt64
         let compressedToolsTokens: UInt64
@@ -38,10 +41,20 @@ struct Stats: Codable {
         let inputTokens: UInt64
         let outputTokens: UInt64
         let errors: UInt64
+        let costUsd: Double?
         let compressionPct: UInt64?
         let logsUrl: String
 
         var id: String { sessionId }
+    }
+}
+
+enum CostFormat {
+    /// Compact USD amount for a KPI tile. A precise sub-cent value does not fit
+    /// in the three-column layout, so distinguish it from a true zero with a bound.
+    static func usd(_ value: Double) -> String {
+        if value > 0 && value < 0.01 { return "<$0.01" }
+        return String(format: "$%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 }
 

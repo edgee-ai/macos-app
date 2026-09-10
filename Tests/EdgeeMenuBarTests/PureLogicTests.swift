@@ -26,6 +26,12 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(TokenFormat.short(2_500_000), "2.5M")
     }
 
+    func testCostFormatUsd() {
+        XCTAssertEqual(CostFormat.usd(0), "$0.00")
+        XCTAssertEqual(CostFormat.usd(80.825915993), "$80.83")
+        XCTAssertEqual(CostFormat.usd(0.0042), "<$0.01")
+    }
+
     // MARK: Appearance
 
     func testAppearanceCycle() {
@@ -162,6 +168,7 @@ final class PureLogicTests: XCTestCase {
                 "input_tokens": 31400,
                 "output_tokens": 2900,
                 "cached_input_tokens": 24000,
+                "cost_usd": 1.2345,
                 "token_cost_savings": 12,
                 "uncompressed_tools_tokens": 100,
                 "compressed_tools_tokens": 60,
@@ -177,6 +184,7 @@ final class PureLogicTests: XCTestCase {
                   "input_tokens": 5000,
                   "output_tokens": 400,
                   "errors": 0,
+                  "cost_usd": 0.456,
                   "compression_pct": 42,
                   "logs_url": "https://example.com/s1"
                 }
@@ -187,9 +195,11 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 4)
         XCTAssertEqual(stats.totals.requests, 38)
         XCTAssertEqual(stats.totals.cachedInputTokens, 24_000)
+        XCTAssertEqual(stats.totals.costUsd, 1.2345)
         XCTAssertEqual(stats.totals.compressionPct, 40)
         XCTAssertEqual(stats.recent.count, 1)
         XCTAssertEqual(stats.recent.first?.toolName, "Claude Code")
+        XCTAssertEqual(stats.recent.first?.costUsd, 0.456)
         XCTAssertEqual(stats.recent.first?.logsUrl, "https://example.com/s1")
     }
 
@@ -206,6 +216,7 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 0)
         XCTAssertNil(stats.totals.compressionPct)
         XCTAssertNil(stats.totals.cachedInputTokens)
+        XCTAssertNil(stats.totals.costUsd)
         XCTAssertTrue(stats.recent.isEmpty)
     }
 
@@ -215,6 +226,7 @@ final class PureLogicTests: XCTestCase {
             {"source":"api","window":"1h","sessions":12,"active_sessions":2,
             "totals":{"requests":241,"errors":3,"input_tokens":189000,
             "output_tokens":34000,"cached_input_tokens":3300000,"token_cost_savings":42,
+            "cost_usd":12.75,
             "uncompressed_tools_tokens":100,"compressed_tools_tokens":60,"compression_pct":40},
             "recent":[]}
             """
@@ -223,6 +235,7 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.window, "1h")
         XCTAssertEqual(stats.activeSessions, 2)
         XCTAssertEqual(stats.totals.cachedInputTokens, 3_300_000)
+        XCTAssertEqual(stats.totals.costUsd, 12.75)
         // Local-shaped JSON (no source/window/active_sessions) leaves them nil.
         let local = try decoder().decode(
             Stats.self,
