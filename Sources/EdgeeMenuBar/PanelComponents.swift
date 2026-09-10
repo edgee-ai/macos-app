@@ -125,51 +125,28 @@ struct TokensCard: View {
 
 // MARK: - Launch strip
 
-/// The "Launch & relay" card: a 4-up grid of same-sized chips, two rows at most.
-///
-/// Only the agents you can actually launch get a chip — detected on this machine, or
-/// enrolled by hand. Past `inlineLimit` the rest collapse into a `+N` chip, and the
-/// dashed `+` opens the rest of what Edgee can route.
+/// The "Desktop apps" card: installed GUI apps only, in a 4-up grid.
 struct LaunchStrip: View {
     @EnvironmentObject private var relays: RelayManager
 
-    /// Chips before the rest collapse into `+N`. Six, so that six chips plus the
-    /// overflow and enroll chips are exactly two rows of four — the card stays the same
-    /// height however long the roster gets.
+    /// Chips before the rest collapse into `+N`.
     private static let inlineLimit = 6
 
     private let columns = Array(
         repeating: GridItem(.flexible(), spacing: ChipMetrics.spacing), count: 4)
 
     @State private var showingOverflow = false
-    @State private var showingEnroll = false
 
     private var runningCount: Int {
-        RelayTarget.all.filter { relays.state($0.id) == .running }.count
+        RelayTarget.installedDesktopApps.filter { relays.state($0.id) == .running }.count
     }
 
-    /// Launchable agents, running ones first — an active session is the thing you're
+    /// Installed desktop apps, running ones first — an active session is the thing you're
     /// most likely to want back, and it must never be the one hidden under `+N`.
     private var quickLinks: [RelayTarget] {
-        let links = RelayTarget.split(
-            detected: relays.detectedAgents, enrolled: relays.enrolled
-        ).quickLinks
+        let links = RelayTarget.installedDesktopApps
         let groups = Dictionary(grouping: links) { relays.state($0.id) != .stopped }
         return (groups[true] ?? []) + (groups[false] ?? [])
-    }
-
-    /// Everything Edgee can route that isn't a chip: not detected, not enrolled.
-    private var enrollable: [RelayTarget] {
-        RelayTarget.split(detected: relays.detectedAgents, enrolled: relays.enrolled).enrollable
-    }
-
-    /// Chips only in the row because the user enrolled them — the ones the enroll
-    /// popover can take back out. Detected agents aren't the user's to remove, and in
-    /// the nothing-detected fallback the whole roster is on show regardless.
-    private var pinned: [RelayTarget] {
-        RelayTarget.all.filter {
-            relays.enrolled.contains($0.id) && !$0.available(detected: relays.detectedAgents)
-        }
     }
 
     var body: some View {
@@ -179,7 +156,7 @@ struct LaunchStrip: View {
 
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                SectionLabel("Launch & relay")
+                SectionLabel("Desktop apps")
                 Spacer()
                 Text(runningCount == 0 ? "none active" : "\(runningCount) active")
                     .font(.system(size: 11.5))
@@ -191,7 +168,7 @@ struct LaunchStrip: View {
                 ForEach(inline) { target in
                     AgentChip(
                         target: target, state: relays.state(target.id),
-                        available: target.available(detected: relays.detectedAgents)
+                        available: true
                     ) {
                         relays.toggle(target)
                     }
@@ -204,8 +181,7 @@ struct LaunchStrip: View {
                                 ForEach(overflow) { target in
                                     AgentRow(
                                         target: target, state: relays.state(target.id),
-                                        available: target.available(
-                                            detected: relays.detectedAgents)
+                                        available: true
                                     ) {
                                         showingOverflow = false
                                         relays.toggle(target)
@@ -215,41 +191,12 @@ struct LaunchStrip: View {
                         }
                 }
 
-                if !enrollable.isEmpty || !pinned.isEmpty {
-                    AddChip { showingEnroll = true }
-                        .popover(isPresented: $showingEnroll, arrowEdge: .bottom) {
-                            AgentList(title: "Route through Edgee") {
-                                // Enrolled first, checkmarked: removal has to be
-                                // visible somewhere, and a chip has no room for it.
-                                ForEach(pinned) { target in
-                                    AgentRow(
-                                        target: target, state: relays.state(target.id),
-                                        available: true, checked: true
-                                    ) {
-                                        relays.unenroll(target.id)
-                                    }
-                                }
-                                ForEach(enrollable) { target in
-                                    AgentRow(
-                                        target: target, state: relays.state(target.id),
-                                        available: false
-                                    ) {
-                                        showingEnroll = false
-                                        relays.enroll(target)
-                                    }
-                                }
-                            }
-                        }
-                }
             }
         }
         .padding(.horizontal, 14)
         .padding(.top, 16)
         .padding(.bottom, 16)
         .cardSurface()
-        // An agent installed since we last looked belongs in the row, so re-check
-        // each time the panel comes up.
-        .onAppear { relays.refreshDetection() }
     }
 }
 

@@ -33,7 +33,9 @@ struct MenuContentView: View {
                 lastHour
                 statTiles
                 tokens
-                LaunchStrip()
+                if !RelayTarget.installedDesktopApps.isEmpty {
+                    LaunchStrip()
+                }
                 openConsole
             }
             footer.padding(.top, 2)

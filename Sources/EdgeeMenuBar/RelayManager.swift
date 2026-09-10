@@ -29,6 +29,16 @@ struct RelayTarget: Identifiable {
     /// How tapping the tile drives this target.
     let mode: LaunchMode
 
+    /// Desktop app targets are the only targets presented by the menubar. Terminal
+    /// agents remain supported by the relay manager, but belong in the CLI rather
+    /// than in the app launcher UI.
+    var isDesktopApp: Bool {
+        switch mode {
+        case .relay, .launch: return true
+        case .terminalAgent: return false
+        }
+    }
+
     var installed: Bool {
         if detectPaths.isEmpty { return true }
         return detectPaths.contains { FileManager.default.fileExists(atPath: $0) }
@@ -105,6 +115,17 @@ struct RelayTarget: Identifiable {
             proxyOnly: false, detectPaths: appPaths("ChatGPT.app"), detectCommand: nil,
             mode: .launch),
     ]
+
+    /// Installed macOS apps that can be launched or relayed from the menubar.
+    /// This is deliberately evaluated on access so installing/removing an app is
+    /// reflected the next time the panel is opened.
+    static var installedDesktopApps: [RelayTarget] {
+        visibleDesktopApps(from: all)
+    }
+
+    static func visibleDesktopApps(from targets: [RelayTarget]) -> [RelayTarget] {
+        targets.filter { $0.isDesktopApp && $0.installed }
+    }
 
     /// The launch card's two halves: the quick links — what we can see on this
     /// machine, plus anything the user enrolled by hand — and the rest, offered under

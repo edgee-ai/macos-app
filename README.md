@@ -1,8 +1,8 @@
 # Edgee menubar app
 
 A native macOS menubar app (SwiftUI `MenuBarExtra`) that surfaces Edgee stats
-and launches agents/relay. It shells out to the `edgee` CLI and reads Edgee's
-local files, so the Rust CLI stays the single source of truth.
+and launches or relays installed desktop apps. It shells out to the `edgee` CLI
+and reads Edgee's local files, so the Rust CLI stays the single source of truth.
 
 The CLI itself lives in a separate repo ([edgee-ai/edgee](https://github.com/edgee-ai/edgee));
 this app does not link it — it drives it as a subprocess and consumes its
@@ -32,40 +32,11 @@ menubar — no Dock icon) and opens it. Click the menubar icon for the dropdown.
 embedded CLI's version, and always records that CLI's version in the plist's
 `EdgeeCLIVersion`.
 
-## Terminal for the TUI agents
+## Which apps get a chip
 
-The CLI agents (Claude Code, Codex, OpenCode, Crush, CodeBuddy, Pi, Kimi Code,
-Kilo Code) need a TTY, so tapping them opens a terminal window running
-`edgee launch <id>`. By default that's whatever app handles `.command` files
-(Terminal.app unless you changed it).
-
-## Which agents get a chip
-
-The launch grid only holds the agents you actually have: GUI apps are detected
-from their bundle, CLI agents by looking for their binary in the `PATH` your
-login shell reports (a GUI app doesn't inherit it). It's two rows at most — past
-six chips the rest collapse into **+N more**.
-
-Everything else Edgee can route sits behind the dashed **Enroll** chip. Picking
-one pins it as a chip and launches it, so the CLI's own install hint lands in a
-terminal window where you can act on it; that's also the way in for an agent
-hidden behind a version-manager shim, which no `PATH` we can reconstruct will
-find. Enrolled agents are listed with a checkmark in the same popover — click one
-to drop it again.
-
-kitty users get a window in their **own running instance** instead, if kitty's
-remote control is on — add to `kitty.conf`:
-
-```conf
-allow_remote_control socket-only
-listen_on unix:/tmp/kitty
-```
-
-Without it the app starts a kitty of its own, isolated in `--instance-group
-edgee` and set to quit with its last window. While an agent window is open that
-instance is still a running kitty, so a Dock/Spotlight launch can land your own
-window in it; once the last agent window closes it exits, so it can't go on
-owning your windows after the session.
+The menubar shows desktop apps only, and only when their app bundle is installed
+in `/Applications` or `~/Applications`. Terminal agents stay available through
+the `edgee` CLI but do not appear in the menubar.
 
 ## Install (Homebrew cask)
 

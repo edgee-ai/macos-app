@@ -101,6 +101,38 @@ final class PureLogicTests: XCTestCase {
         }
     }
 
+    func testDesktopAppRosterExcludesTerminalAgents() {
+        let desktopApps = RelayTarget.all.filter(\.isDesktopApp)
+        XCTAssertEqual(
+            desktopApps.map(\.id),
+            ["cursor", "copilot-vscode", "claude-desktop", "codex-desktop"])
+        XCTAssertTrue(desktopApps.allSatisfy { $0.detectCommand == nil })
+        XCTAssertTrue(desktopApps.allSatisfy { !$0.detectPaths.isEmpty })
+        XCTAssertTrue(RelayTarget.installedDesktopApps.allSatisfy {
+            $0.isDesktopApp && $0.installed
+        })
+    }
+
+    func testVisibleDesktopAppsRequiresDesktopModeAndInstalledBundle() {
+        let installedDesktop = RelayTarget(
+            id: "installed-desktop", name: "Installed", symbol: "app",
+            proxyOnly: false, detectPaths: ["/bin/sh"], detectCommand: nil, mode: .relay)
+        let missingDesktop = RelayTarget(
+            id: "missing-desktop", name: "Missing", symbol: "app",
+            proxyOnly: false, detectPaths: ["/definitely/not/an/installed/app"],
+            detectCommand: nil, mode: .launch)
+        let installedTerminal = RelayTarget(
+            id: "installed-terminal", name: "Terminal", symbol: "terminal",
+            proxyOnly: false, detectPaths: ["/bin/sh"], detectCommand: "sh",
+            mode: .terminalAgent)
+
+        XCTAssertEqual(
+            RelayTarget.visibleDesktopApps(
+                from: [missingDesktop, installedTerminal, installedDesktop]
+            ).map(\.id),
+            ["installed-desktop"])
+    }
+
     // MARK: Launch-grid split (quick links vs "enroll an agent")
 
     func testSplitKeepsDetectedAgentsAsQuickLinks() {
