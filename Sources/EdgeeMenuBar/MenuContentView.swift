@@ -33,7 +33,9 @@ struct MenuContentView: View {
                 lastHour
                 statTiles
                 tokens
-                LaunchStrip()
+                if !RelayTarget.installedDesktopApps.isEmpty {
+                    LaunchStrip()
+                }
                 openConsole
             }
             footer.padding(.top, 2)
@@ -228,7 +230,8 @@ struct MenuContentView: View {
         let active = activeTile
         return HStack(spacing: 12) {
             StatTile(label: "Requests", value: requestsValue)
-            StatTile(label: active.label, value: active.value, dot: active.on ? Theme.running : nil)
+            StatTile(label: "Cost", value: costValue)
+            StatTile(label: "Active", value: active.value, dot: active.on ? Theme.running : nil)
         }
     }
 
@@ -308,14 +311,14 @@ struct MenuContentView: View {
         }
     }
 
-    /// The second KPI tile: real online-session count from the API when available,
+    /// The active KPI: real online-session count from the API when available,
     /// otherwise the local count of running relays.
-    private var activeTile: (label: String, value: String, on: Bool) {
+    private var activeTile: (value: String, on: Bool) {
         if let active = model.stats?.activeSessions {
-            return ("Active sessions", "\(active)", active > 0)
+            return ("\(active)", active > 0)
         }
         let n = runningCount
-        return ("Active relays", "\(n)", n > 0)
+        return ("\(n)", n > 0)
     }
 
     private var sessionsLabel: String {
@@ -326,6 +329,11 @@ struct MenuContentView: View {
     private var requestsValue: String {
         guard let r = model.stats?.totals.requests else { return "—" }
         return r.formatted()
+    }
+
+    private var costValue: String {
+        guard let cost = model.stats?.totals.costUsd else { return "—" }
+        return CostFormat.usd(cost)
     }
 
     private func tokenValue(_ key: KeyPath<Stats.Totals, UInt64>) -> String {

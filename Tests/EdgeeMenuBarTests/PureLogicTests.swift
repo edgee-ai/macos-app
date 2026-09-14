@@ -26,6 +26,12 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(TokenFormat.short(2_500_000), "2.5M")
     }
 
+    func testCostFormatUsd() {
+        XCTAssertEqual(CostFormat.usd(0), "$0.00")
+        XCTAssertEqual(CostFormat.usd(80.825915993), "$80.83")
+        XCTAssertEqual(CostFormat.usd(0.0042), "<$0.01")
+    }
+
     // MARK: Appearance
 
     func testAppearanceCycle() {
@@ -95,6 +101,62 @@ final class PureLogicTests: XCTestCase {
         }
     }
 
+    func testDesktopAppRosterExcludesTerminalAgents() {
+        let desktopApps = RelayTarget.all.filter(\.isDesktopApp)
+        XCTAssertEqual(
+            desktopApps.map(\.id),
+            ["cursor", "copilot-vscode", "claude-desktop", "codex-desktop"])
+        XCTAssertTrue(desktopApps.allSatisfy { $0.detectCommand == nil })
+        XCTAssertTrue(desktopApps.allSatisfy { !$0.detectPaths.isEmpty })
+        XCTAssertTrue(RelayTarget.installedDesktopApps.allSatisfy {
+            $0.isDesktopApp && $0.installed
+        })
+    }
+
+    func testVisibleDesktopAppsRequiresDesktopModeAndInstalledBundle() {
+        let installedDesktop = RelayTarget(
+            id: "installed-desktop", name: "Installed", symbol: "app",
+            proxyOnly: false, detectPaths: ["/bin/sh"], detectCommand: nil, mode: .relay)
+        let missingDesktop = RelayTarget(
+            id: "missing-desktop", name: "Missing", symbol: "app",
+            proxyOnly: false, detectPaths: ["/definitely/not/an/installed/app"],
+            detectCommand: nil, mode: .launch)
+        let installedTerminal = RelayTarget(
+            id: "installed-terminal", name: "Terminal", symbol: "terminal",
+            proxyOnly: false, detectPaths: ["/bin/sh"], detectCommand: "sh",
+            mode: .terminalAgent)
+
+        XCTAssertEqual(
+            RelayTarget.visibleDesktopApps(
+                from: [missingDesktop, installedTerminal, installedDesktop]
+            ).map(\.id),
+            ["installed-desktop"])
+    }
+
+    func testOnlyRelayTargetsNeedPersistentProxy() {
+        for target in RelayTarget.all {
+            switch target.mode {
+            case .relay:
+                XCTAssertTrue(target.needsPersistentProxy, target.id)
+            case .launch, .terminalAgent:
+                XCTAssertFalse(target.needsPersistentProxy, target.id)
+            }
+        }
+    }
+
+    func testRunningWithoutProxyState() {
+        let relay = RelayTarget.all.first { $0.id == "cursor" }!
+        let oneShot = RelayTarget.all.first { $0.id == "codex-desktop" }!
+
+        XCTAssertTrue(relay.isRunningWithoutProxy(appIsRunning: true, relayState: .stopped))
+        XCTAssertTrue(
+            relay.isRunningWithoutProxy(appIsRunning: true, relayState: .failed("exited")))
+        XCTAssertFalse(relay.isRunningWithoutProxy(appIsRunning: true, relayState: .starting))
+        XCTAssertFalse(relay.isRunningWithoutProxy(appIsRunning: true, relayState: .running))
+        XCTAssertFalse(relay.isRunningWithoutProxy(appIsRunning: false, relayState: .stopped))
+        XCTAssertFalse(oneShot.isRunningWithoutProxy(appIsRunning: true, relayState: .stopped))
+    }
+
     // MARK: Launch-grid split (quick links vs "enroll an agent")
 
     func testSplitKeepsDetectedAgentsAsQuickLinks() {
@@ -162,6 +224,7 @@ final class PureLogicTests: XCTestCase {
                 "input_tokens": 31400,
                 "output_tokens": 2900,
                 "cached_input_tokens": 24000,
+                "cost_usd": 1.2345,
                 "token_cost_savings": 12,
                 "uncompressed_tools_tokens": 100,
                 "compressed_tools_tokens": 60,
@@ -177,6 +240,7 @@ final class PureLogicTests: XCTestCase {
                   "input_tokens": 5000,
                   "output_tokens": 400,
                   "errors": 0,
+                  "cost_usd": 0.456,
                   "compression_pct": 42,
                   "logs_url": "https://example.com/s1"
                 }
@@ -187,9 +251,11 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 4)
         XCTAssertEqual(stats.totals.requests, 38)
         XCTAssertEqual(stats.totals.cachedInputTokens, 24_000)
+        XCTAssertEqual(stats.totals.costUsd, 1.2345)
         XCTAssertEqual(stats.totals.compressionPct, 40)
         XCTAssertEqual(stats.recent.count, 1)
         XCTAssertEqual(stats.recent.first?.toolName, "Claude Code")
+        XCTAssertEqual(stats.recent.first?.costUsd, 0.456)
         XCTAssertEqual(stats.recent.first?.logsUrl, "https://example.com/s1")
     }
 
@@ -206,6 +272,7 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 0)
         XCTAssertNil(stats.totals.compressionPct)
         XCTAssertNil(stats.totals.cachedInputTokens)
+        XCTAssertNil(stats.totals.costUsd)
         XCTAssertTrue(stats.recent.isEmpty)
     }
 
@@ -215,6 +282,7 @@ final class PureLogicTests: XCTestCase {
             {"source":"api","window":"1h","sessions":12,"active_sessions":2,
             "totals":{"requests":241,"errors":3,"input_tokens":189000,
             "output_tokens":34000,"cached_input_tokens":3300000,"token_cost_savings":42,
+            "cost_usd":12.75,
             "uncompressed_tools_tokens":100,"compressed_tools_tokens":60,"compression_pct":40},
             "recent":[]}
             """
@@ -223,6 +291,7 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.window, "1h")
         XCTAssertEqual(stats.activeSessions, 2)
         XCTAssertEqual(stats.totals.cachedInputTokens, 3_300_000)
+        XCTAssertEqual(stats.totals.costUsd, 12.75)
         // Local-shaped JSON (no source/window/active_sessions) leaves them nil.
         let local = try decoder().decode(
             Stats.self,
