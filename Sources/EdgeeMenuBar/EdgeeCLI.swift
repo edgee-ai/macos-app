@@ -218,8 +218,9 @@ enum EdgeeCLI {
     /// wedge on a full pipe; stdout is discarded and stderr feeds a bounded tail so
     /// the last error line is available as the failure cause. Returns the process
     /// and its stderr tail, or nil if it couldn't be launched.
-    static func spawn(_ args: [String]) -> (process: Process, stderr: StderrTail)? {
+    static func spawn(_ args: [String], environment: [String: String] = [:]) -> (process: Process, stderr: StderrTail)? {
         let process = makeProcess(args)
+        process.environment = (process.environment ?? [:]).merging(environment) { _, override in override }
 
         let outPipe = Pipe()
         process.standardOutput = outPipe

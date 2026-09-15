@@ -7,6 +7,16 @@ import XCTest
 /// contract. Anything that needs a subprocess or SwiftUI is out of scope here.
 final class PureLogicTests: XCTestCase {
 
+    func testCacheShareUsesAllInputTokens() {
+        XCTAssertEqual(CacheShare.fraction(input: 126_000, cached: 3_900_000)!, 0.9687, accuracy: 0.0001)
+        XCTAssertEqual(CacheShare.fraction(input: 0, cached: 100), 1)
+        XCTAssertEqual(CacheShare.fraction(input: 100, cached: 0), 0)
+        XCTAssertNil(CacheShare.fraction(input: 0, cached: 0))
+        XCTAssertNil(CacheShare.fraction(input: 100, cached: nil))
+        XCTAssertEqual(CacheShare.fraction(input: .max, cached: .max), 0.5)
+        XCTAssertEqual(CacheShare.fraction(input: 100, cached: 200, cacheWrite: 100), 0.5)
+    }
+
     // MARK: TokenFormat
 
     func testTokenFormatShort() {
@@ -78,6 +88,8 @@ final class PureLogicTests: XCTestCase {
             "claude-desktop": .relay,
             "cursor": .relay,
             "copilot-vscode": .relay,
+            "copilot-desktop": .relay,
+            "intellij": .relay,
         ]
         XCTAssertEqual(Set(byId.keys), Set(expected.keys))
         for (id, mode) in expected {
@@ -105,7 +117,7 @@ final class PureLogicTests: XCTestCase {
         let desktopApps = RelayTarget.all.filter(\.isDesktopApp)
         XCTAssertEqual(
             desktopApps.map(\.id),
-            ["cursor", "copilot-vscode", "claude-desktop", "codex-desktop"])
+            ["cursor", "copilot-vscode", "copilot-desktop", "intellij", "claude-desktop", "codex-desktop"])
         XCTAssertTrue(desktopApps.allSatisfy { $0.detectCommand == nil })
         XCTAssertTrue(desktopApps.allSatisfy { !$0.detectPaths.isEmpty })
         XCTAssertTrue(RelayTarget.installedDesktopApps.allSatisfy {
@@ -131,6 +143,37 @@ final class PureLogicTests: XCTestCase {
                 from: [missingDesktop, installedTerminal, installedDesktop]
             ).map(\.id),
             ["installed-desktop"])
+    }
+
+    func testIntelliJDiscoveryFindsToolboxAndRejectsInvalidBundles() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        func bundle(_ relative: String, id: String, executable: Bool = true) throws -> URL {
+            let app = root.appendingPathComponent(relative)
+            let contents = app.appendingPathComponent("Contents")
+            try fm.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+            let plist = try PropertyListSerialization.data(
+                fromPropertyList: ["CFBundleIdentifier": id, "CFBundleExecutable": "idea", "CFBundlePackageType": "APPL"],
+                format: .xml, options: 0)
+            try plist.write(to: contents.appendingPathComponent("Info.plist"))
+            if executable {
+                let binary = contents.appendingPathComponent("MacOS/idea")
+                try Data("#!/bin/sh\n".utf8).write(to: binary)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+            }
+            return app
+        }
+        let toolbox = root.appendingPathComponent("Toolbox/apps")
+        let invalid = try bundle("broken.app", id: "com.jetbrains.intellij", executable: false)
+        let unrelated = try bundle("other.app", id: "com.jetbrains.pycharm")
+        XCTAssertNil(IntelliJDiscovery.findBundle(candidates: [invalid.path, unrelated.path], toolboxRoot: toolbox))
+        let idea = try bundle("Toolbox/apps/IDEA-C/ch-0/251.123/IntelliJ IDEA CE.app", id: "com.jetbrains.intellij.ce")
+        let discovered = try XCTUnwrap(IntelliJDiscovery.findBundle(candidates: [invalid.path, unrelated.path], toolboxRoot: toolbox))
+        XCTAssertEqual(URL(fileURLWithPath: discovered).resolvingSymlinksInPath(), idea.resolvingSymlinksInPath())
+        XCTAssertEqual(IntelliJDiscovery.findBundle(candidates: [idea.path], toolboxRoot: root.appendingPathComponent("missing")), idea.path)
+        let standard = try bundle("Applications/IntelliJ IDEA.app", id: "com.jetbrains.intellij")
+        XCTAssertEqual(IntelliJDiscovery.findBundle(candidates: [standard.path], toolboxRoot: toolbox), standard.path)
     }
 
     func testOnlyRelayTargetsNeedPersistentProxy() {
@@ -224,6 +267,8 @@ final class PureLogicTests: XCTestCase {
                 "input_tokens": 31400,
                 "output_tokens": 2900,
                 "cached_input_tokens": 24000,
+                "cache_creation_input_tokens": 1200,
+                "reasoning_output_tokens": 500,
                 "cost_usd": 1.2345,
                 "token_cost_savings": 12,
                 "uncompressed_tools_tokens": 100,
@@ -251,6 +296,8 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 4)
         XCTAssertEqual(stats.totals.requests, 38)
         XCTAssertEqual(stats.totals.cachedInputTokens, 24_000)
+        XCTAssertEqual(stats.totals.cacheCreationInputTokens, 1200)
+        XCTAssertEqual(stats.totals.reasoningOutputTokens, 500)
         XCTAssertEqual(stats.totals.costUsd, 1.2345)
         XCTAssertEqual(stats.totals.compressionPct, 40)
         XCTAssertEqual(stats.recent.count, 1)
@@ -272,6 +319,8 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 0)
         XCTAssertNil(stats.totals.compressionPct)
         XCTAssertNil(stats.totals.cachedInputTokens)
+        XCTAssertNil(stats.totals.cacheCreationInputTokens)
+        XCTAssertNil(stats.totals.reasoningOutputTokens)
         XCTAssertNil(stats.totals.costUsd)
         XCTAssertTrue(stats.recent.isEmpty)
     }

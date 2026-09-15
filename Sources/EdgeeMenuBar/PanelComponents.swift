@@ -24,7 +24,7 @@ struct SectionLabel: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10, weight: .bold))
+            .font(Theme.font(size: 10, weight: .semibold))
             .tracking(0.9)
             .foregroundStyle(Theme.labelMuted)
     }
@@ -107,13 +107,13 @@ struct TokensCard: View {
                 .fill(iconBg)
                 .frame(width: 26, height: 26)
                 .overlay(
-                    Image(systemName: icon).font(.system(size: 12, weight: .bold))
+                    Image(systemName: icon).font(Theme.font(size: 12, weight: .bold))
                         .foregroundStyle(tint))
             VStack(alignment: .leading, spacing: 4) {
                 Text(value).font(Theme.serif(22)).foregroundStyle(Theme.ink).lineLimit(1)
                 if let sub {
                     Text(sub)
-                        .font(.system(size: 10.5, weight: subBold ? .semibold : .regular))
+                        .font(Theme.font(size: 10.5, weight: subBold ? .semibold : .regular))
                         .foregroundStyle(subColor)
                         .lineLimit(1)
                 }
@@ -163,7 +163,7 @@ struct LaunchStrip: View {
                 SectionLabel("Desktop apps")
                 Spacer()
                 Text(runningCount == 0 ? "none active" : "\(runningCount) active")
-                    .font(.system(size: 11.5))
+                    .font(Theme.font(size: 11.5))
                     .foregroundStyle(unproxied.isEmpty ? Theme.secondaryText : .orange)
             }
             .padding(.bottom, 12)
@@ -201,11 +201,11 @@ struct LaunchStrip: View {
             if !unproxied.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(Theme.font(size: 11, weight: .semibold))
                         .foregroundStyle(.orange)
                         .padding(.top, 1)
                     Text(unproxiedMessage)
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(Theme.font(size: 10.5, weight: .medium))
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -271,7 +271,7 @@ struct AgentChip: View {
             VStack(spacing: 6) {
                 AgentIcon(target: target, side: ChipMetrics.icon)
                 Text(target.name)
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(Theme.font(size: 9.5, weight: .semibold))
                     .foregroundStyle(Theme.bodyText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
@@ -291,7 +291,7 @@ struct AgentChip: View {
     private var statusDot: some View {
         if unproxied, state == .stopped {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 9, weight: .bold))
+                .font(Theme.font(size: 9, weight: .bold))
                 .foregroundStyle(.orange)
         } else {
             switch state {
@@ -330,11 +330,11 @@ struct CountChip: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Text(label)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(Theme.font(size: 14, weight: .bold))
                     .foregroundStyle(Theme.bodyText)
                     .frame(height: ChipMetrics.icon)
                 Text("more")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(Theme.font(size: 9.5, weight: .semibold))
                     .foregroundStyle(Theme.secondaryText)
                     .frame(maxWidth: .infinity, minHeight: ChipMetrics.labelHeight, alignment: .top)
             }
@@ -354,11 +354,11 @@ struct AddChip: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(Theme.font(size: 13, weight: .bold))
                     .foregroundStyle(Theme.secondaryText)
                     .frame(height: ChipMetrics.icon)
                 Text("Enroll")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(Theme.font(size: 9.5, weight: .semibold))
                     .foregroundStyle(Theme.secondaryText)
                     .frame(maxWidth: .infinity, minHeight: ChipMetrics.labelHeight, alignment: .top)
             }
@@ -434,7 +434,7 @@ struct AgentRow: View {
                     .background(
                         Theme.tileBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 Text(target.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(Theme.font(size: 12, weight: .medium))
                     .foregroundStyle(Theme.bodyText)
                     .lineLimit(1)
                 Spacer(minLength: 6)
@@ -457,11 +457,11 @@ struct AgentRow: View {
     private var trailing: some View {
         if unproxied, state == .stopped {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 9, weight: .bold))
+                .font(Theme.font(size: 9, weight: .bold))
                 .foregroundStyle(.orange)
         } else if checked {
             Image(systemName: "checkmark")
-                .font(.system(size: 10, weight: .bold))
+                .font(Theme.font(size: 10, weight: .bold))
                 .foregroundStyle(Theme.brand)
         } else {
             switch state {
@@ -509,15 +509,18 @@ struct AccountPill: View {
                 Button("Refresh") { Task { await model.reload() } }
                 Button("Log out", role: .destructive) { Task { await model.logout() } }
             } label: {
-                pill {
-                    label(
-                        initial: initial(status.email),
-                        text: status.email ?? "Logged in", chevron: true)
-                }
+                Text(initial(status.email))
+                    .font(Theme.font(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.pillBg, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.pillBorder, lineWidth: 1))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .fixedSize()
+            .frame(width: 34)
+            .help(status.email ?? "Account")
+            .accessibilityLabel("Account")
             .disabled(model.switching)
         } else {
             Button { Task { await model.login() } } label: {
@@ -525,7 +528,7 @@ struct AccountPill: View {
                     if model.loggingIn {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text("Opening…").font(.system(size: 12, weight: .semibold))
+                            Text("Opening…").font(Theme.font(size: 12, weight: .semibold))
                                 .foregroundStyle(Theme.bodyText)
                         }
                     } else {
@@ -562,18 +565,18 @@ struct AccountPill: View {
     private func label(initial: String, text: String, chevron: Bool = false) -> some View {
         HStack(spacing: 8) {
             Text(initial)
-                .font(.system(size: 10, weight: .bold))
+                .font(Theme.font(size: 10, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 21, height: 21)
                 .background(Theme.brandGradient, in: Circle())
             Text(text)
-                .font(.system(size: 12, weight: .semibold))
+                .font(Theme.font(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.bodyText)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if chevron {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(Theme.font(size: 8, weight: .bold))
                     .foregroundStyle(Theme.secondaryText)
             }
         }
