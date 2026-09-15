@@ -48,14 +48,14 @@ struct MenuContentView: View {
         }
         .padding(20)
         .frame(width: 420)
+        // Let MenuBarExtra resize its window to the current tab and async data,
+        // rather than centering a shorter card inside the previous window size.
+        .fixedSize(horizontal: false, vertical: true)
         .background(Theme.panelTop)
         .environment(\.colorScheme, resolvedScheme)
         .preferredColorScheme(appearance.colorScheme)
         .background(PanelWindowReader { panelWindow = $0 })
-        // A log out replaces the dashboard with the much shorter login card, and
-        // `MenuBarExtra(.window)` doesn't re-lay its panel out when the content
-        // shrinks underneath it — the window keeps its old frame and the card is
-        // drawn detached from it. Close instead; the next open sizes correctly.
+        // Dismiss the panel after logging out of the current account.
         .onChange(of: model.logoutCount) { panelWindow?.close() }
         .task { await model.reload() }
     }
