@@ -56,7 +56,7 @@ struct RelayTarget: Identifiable {
 
     var installed: Bool {
         if detectPaths.isEmpty { return true }
-        return detectPaths.contains { FileManager.default.fileExists(atPath: $0) }
+        return appBundlePath != nil
     }
 
     /// Whether we can see this target on the machine — a GUI bundle that exists, or a
@@ -71,7 +71,8 @@ struct RelayTarget: Identifiable {
     /// The installed app bundle path (first existing detectPath), used to render
     /// the app's real macOS icon. `nil` → fall back to the SF Symbol.
     var appBundlePath: String? {
-        detectPaths.first { FileManager.default.fileExists(atPath: $0) }
+        if id == "intellij" { return IntelliJDiscovery.bundlePath(standardPaths: detectPaths) }
+        return detectPaths.first { FileManager.default.fileExists(atPath: $0) }
     }
 
     /// Used with `NSWorkspace.runningApplications` to recognize an open app even
@@ -616,7 +617,11 @@ final class RelayManager: ObservableObject {
         if target.proxyOnly { args.append("--no-launch") }
 
         let id = target.id
-        guard let spawned = EdgeeCLI.spawn(args) else {
+        var environment: [String: String] = [:]
+        if target.id == "intellij", let bundle = target.appBundlePath {
+            environment["EDGEE_INTELLIJ_BINARY"] = bundle + "/Contents/MacOS/idea"
+        }
+        guard let spawned = EdgeeCLI.spawn(args, environment: environment) else {
             states[id] = .failed("could not start edgee")
             return
         }

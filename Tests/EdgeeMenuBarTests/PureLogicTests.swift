@@ -145,6 +145,37 @@ final class PureLogicTests: XCTestCase {
             ["installed-desktop"])
     }
 
+    func testIntelliJDiscoveryFindsToolboxAndRejectsInvalidBundles() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        func bundle(_ relative: String, id: String, executable: Bool = true) throws -> URL {
+            let app = root.appendingPathComponent(relative)
+            let contents = app.appendingPathComponent("Contents")
+            try fm.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+            let plist = try PropertyListSerialization.data(
+                fromPropertyList: ["CFBundleIdentifier": id, "CFBundleExecutable": "idea", "CFBundlePackageType": "APPL"],
+                format: .xml, options: 0)
+            try plist.write(to: contents.appendingPathComponent("Info.plist"))
+            if executable {
+                let binary = contents.appendingPathComponent("MacOS/idea")
+                try Data("#!/bin/sh\n".utf8).write(to: binary)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+            }
+            return app
+        }
+        let toolbox = root.appendingPathComponent("Toolbox/apps")
+        let invalid = try bundle("broken.app", id: "com.jetbrains.intellij", executable: false)
+        let unrelated = try bundle("other.app", id: "com.jetbrains.pycharm")
+        XCTAssertNil(IntelliJDiscovery.findBundle(candidates: [invalid.path, unrelated.path], toolboxRoot: toolbox))
+        let idea = try bundle("Toolbox/apps/IDEA-C/ch-0/251.123/IntelliJ IDEA CE.app", id: "com.jetbrains.intellij.ce")
+        let discovered = try XCTUnwrap(IntelliJDiscovery.findBundle(candidates: [invalid.path, unrelated.path], toolboxRoot: toolbox))
+        XCTAssertEqual(URL(fileURLWithPath: discovered).resolvingSymlinksInPath(), idea.resolvingSymlinksInPath())
+        XCTAssertEqual(IntelliJDiscovery.findBundle(candidates: [idea.path], toolboxRoot: root.appendingPathComponent("missing")), idea.path)
+        let standard = try bundle("Applications/IntelliJ IDEA.app", id: "com.jetbrains.intellij")
+        XCTAssertEqual(IntelliJDiscovery.findBundle(candidates: [standard.path], toolboxRoot: toolbox), standard.path)
+    }
+
     func testOnlyRelayTargetsNeedPersistentProxy() {
         for target in RelayTarget.all {
             switch target.mode {
