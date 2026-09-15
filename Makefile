@@ -62,6 +62,7 @@ bundle: build
 	cp "$(EDGEE_BIN)" "$(APP)/Contents/Resources/edgee"
 	cp Assets/Edgee.icns "$(APP)/Contents/Resources/Edgee.icns"
 	cp Assets/MenuBarIcon.pdf "$(APP)/Contents/Resources/MenuBarIcon.pdf"
+	cp -R Sources/EdgeeMenuBar/Fonts "$(APP)/Contents/Resources/Fonts"
 	cp Info.plist "$(APP)/Contents/Info.plist"
 	@CLI_VERSION=$$("$(EDGEE_BIN)" --version 2>/dev/null | sed -E 's/[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
 		CLI_VERSION=$${CLI_VERSION:-0.0.0}; \

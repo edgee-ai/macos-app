@@ -36,7 +36,7 @@ struct MenuContentView: View {
                 } else {
                     if RelayTarget.installedDesktopApps.isEmpty {
                         Text("No supported desktop agents installed.")
-                            .font(.system(size: 13))
+                            .font(Theme.font(size: 13))
                             .foregroundStyle(Theme.secondaryText)
                             .frame(maxWidth: .infinity, minHeight: 160)
                     } else {
@@ -72,7 +72,7 @@ struct MenuContentView: View {
     private var loadingView: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Checking…").font(.system(size: 12)).foregroundStyle(Theme.secondaryText)
+            Text("Checking…").font(Theme.font(size: 12)).foregroundStyle(Theme.secondaryText)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 36)
@@ -83,14 +83,14 @@ struct MenuContentView: View {
     private var loggedOutView: some View {
         VStack(spacing: 14) {
             Image(systemName: "person.crop.circle.badge.questionmark")
-                .font(.system(size: 34))
+                .font(Theme.font(size: 34))
                 .foregroundStyle(Theme.secondaryText)
             VStack(spacing: 4) {
                 Text("Log in to Edgee")
                     .font(Theme.serif(17))
                     .foregroundStyle(Theme.ink)
                 Text("See your usage and launch agents through the gateway.")
-                    .font(.system(size: 12))
+                    .font(Theme.font(size: 12))
                     .foregroundStyle(Theme.secondaryText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -104,7 +104,7 @@ struct MenuContentView: View {
                         Text("Log in")
                     }
                 }
-                .font(.system(size: 13, weight: .semibold))
+                .font(Theme.font(size: 13, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.vertical, 11)
                 .frame(maxWidth: .infinity)
@@ -129,7 +129,7 @@ struct MenuContentView: View {
             SectionLabel("Choose an organization")
             if model.orgs.isEmpty {
                 Text("No organizations found. Create one in the console to continue.")
-                    .font(.system(size: 12))
+                    .font(Theme.font(size: 12))
                     .foregroundStyle(Theme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 openConsole
@@ -139,10 +139,10 @@ struct MenuContentView: View {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(org.name)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(Theme.font(size: 13, weight: .semibold))
                                     .foregroundStyle(Theme.ink)
                                 Text(org.slug)
-                                    .font(.system(size: 11))
+                                    .font(Theme.font(size: 11))
                                     .foregroundStyle(Theme.secondaryText)
                             }
                             Spacer()
@@ -150,7 +150,7 @@ struct MenuContentView: View {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(Theme.font(size: 11, weight: .bold))
                                     .foregroundStyle(Theme.secondaryText)
                             }
                         }
@@ -181,7 +181,7 @@ struct MenuContentView: View {
                         .foregroundStyle(.white))
                 .shadow(color: Theme.brand.opacity(0.4), radius: 6, y: 3)
             Text("edgee")
-                .font(.system(size: 24, weight: .bold))
+                .font(Theme.font(size: 24, weight: .bold))
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
             AccountPill()
@@ -196,7 +196,7 @@ struct MenuContentView: View {
             appearanceRaw = appearance.next.rawValue
         } label: {
             Image(systemName: appearance.symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(Theme.font(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.secondaryText)
                 .frame(width: 26, height: 26)
                 .background(Theme.pillBg, in: Circle())
@@ -213,7 +213,7 @@ struct MenuContentView: View {
             SectionLabel(windowLabel)
             Spacer()
             Text(sessionsLabel)
-                .font(.system(size: 11.5))
+                .font(Theme.font(size: 11.5))
                 .foregroundStyle(Theme.secondaryText)
         }
         .padding(.horizontal, 4)
@@ -224,7 +224,7 @@ struct MenuContentView: View {
             ForEach(["Overview", "Agents"], id: \.self) { tab in
                 Button { selectedTab = tab } label: {
                     Text(tab)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Theme.font(size: 13, weight: .semibold))
                         .foregroundStyle(selectedTab == tab ? Theme.ink : Theme.secondaryText)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -245,11 +245,11 @@ struct MenuContentView: View {
             HStack {
                 SectionLabel("Total spend")
                 Spacer()
-                Text("USD").font(.system(size: 11, design: .monospaced))
+                Text("USD").font(Theme.font(size: 11))
                     .foregroundStyle(Theme.secondaryText)
             }
             Text(costValue)
-                .font(.system(size: 44, weight: .medium)).monospacedDigit()
+                .font(Theme.font(size: 44, weight: .medium)).monospacedDigit()
                 .foregroundStyle(Theme.ink)
             Rectangle().fill(Theme.divider).frame(height: 1)
             HStack {
@@ -267,7 +267,7 @@ struct MenuContentView: View {
     private func metric(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title)
-            Text(value).font(.system(size: 22, weight: .medium)).monospacedDigit()
+            Text(value).font(Theme.font(size: 22, weight: .medium)).monospacedDigit()
                 .foregroundStyle(Theme.ink)
         }
     }
@@ -284,7 +284,7 @@ struct MenuContentView: View {
             HStack {
                 SectionLabel("Token breakdown")
                 Spacer()
-                Text("VOLUME").font(.system(size: 10, design: .monospaced))
+                Text("VOLUME").font(Theme.font(size: 10))
                     .foregroundStyle(Theme.secondaryText)
             }
             if let totals = model.stats?.totals {
@@ -292,7 +292,7 @@ struct MenuContentView: View {
                     ("Input", Double(totals.inputTokens), Theme.input),
                     ("Cache write", Double(totals.cacheCreationInputTokens ?? 0), Theme.cacheWrite),
                     ("Cached input", Double(totals.cachedInputTokens ?? 0), Theme.cached),
-                    ("Output", Double(totals.outputTokens - min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.accent),
+                    ("Output", Double(totals.outputTokens - min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.output),
                     ("Reasoning", Double(min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.reasoning),
                 ]
                 let total = segments.reduce(0) { $0 + $1.1 }
@@ -316,7 +316,7 @@ struct MenuContentView: View {
             if let cached = model.stats?.totals.cachedInputTokens {
                 tokenRow("Cached input", value: TokenFormat.short(cached), color: Theme.cached)
             }
-            tokenRow("Output", value: tokenValue(\.outputTokens), color: Theme.accent)
+            tokenRow("Output", value: tokenValue(\.outputTokens), color: Theme.output)
             if let reasoning = model.stats?.totals.reasoningOutputTokens {
                 tokenRow("Reasoning (included in output)", value: TokenFormat.short(reasoning), color: Theme.reasoning)
             }
@@ -328,9 +328,9 @@ struct MenuContentView: View {
     private func tokenRow(_ label: String, value: String, color: Color) -> some View {
         HStack(spacing: 8) {
             Circle().fill(color).frame(width: 5, height: 5)
-            Text(label).font(.system(size: 13))
+            Text(label).font(Theme.font(size: 13))
             Spacer()
-            Text(value).font(.system(size: 13, design: .monospaced))
+            Text(value).font(Theme.font(size: 13))
                 .foregroundStyle(Theme.secondaryText)
         }
         .foregroundStyle(Theme.bodyText)
@@ -345,7 +345,7 @@ struct MenuContentView: View {
             }
         } label: {
             Label("Console", systemImage: "arrow.up.right")
-                .font(.system(size: 12))
+                .font(Theme.font(size: 12))
                 .foregroundStyle(Theme.secondaryText)
         }
         .buttonStyle(.plain)
@@ -372,7 +372,7 @@ struct MenuContentView: View {
             }
             .keyboardShortcut("q", modifiers: .command)
         }
-        .font(.system(size: 12))
+        .font(Theme.font(size: 12))
         .buttonStyle(.plain)
         .foregroundStyle(Theme.secondaryText)
         .padding(.horizontal, 6)

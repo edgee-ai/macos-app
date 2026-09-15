@@ -1,38 +1,33 @@
 import AppKit
+import CoreText
 import SwiftUI
 
-/// Adaptive neutral surfaces with lime dashboard accents.
+/// Palette from console globals.css and chart-colors.constants.ts.
 enum Theme {
-    static let accent = Color.adaptive(light: 0x527C20, dark: 0xBDF180)
-    static let input = Color(hex: 0x7ACDBD)
-    static let cacheWrite = Color(hex: 0xAF98ED)
-    static let reasoning = Color(hex: 0xF2BA70)
-    static let cached = Color(hex: 0x79AAF0)
+    static let accent = Color.adaptive(light: 0x820ACD, dark: 0xBB26CF)
+    static let input = Color(hex: 0x0EA5E9)
+    static let cached = Color(hex: 0xFB923C)
+    static let cacheWrite = cached
+    static let output = Color(hex: 0x2DD4BF)
+    static let reasoning = Color(hex: 0xFB7185)
 
-    // Brand constants (identical across modes).
     static let brand = Color(hex: 0x9400D3)
     static let indigo = Color(hex: 0x3D2EB3)
 
-    // Text ramp.
-    static let ink = Color.adaptive(light: 0x0F0715, dark: 0xF1F4F2)
-    static let bodyText = Color.adaptive(light: 0x374151, dark: 0xE1E5E3)
-    static let labelMuted = Color.adaptive(light: 0xA0A0B8, dark: 0x899397)
-    static let secondaryText = Color.adaptive(light: 0xB0A8C0, dark: 0x899397)
+    static let ink = Color.adaptive(light: 0x1C1924, dark: 0xF0F2F5)
+    static let bodyText = ink
+    static let labelMuted = Color.adaptive(light: 0x9C9AAC, dark: 0x7E7382)
+    static let secondaryText = labelMuted
 
-    // Surfaces.
-    static let panelTop = Color.adaptive(light: 0xF5F7F5, dark: 0x0C0F10)
-    static let panelBottom = Color.adaptive(light: 0xF5F7F5, dark: 0x0C0F10)
-    static let cardFill = Color.adaptive(light: 0xFFFFFF, dark: 0x161A1B)
-    static let cardBorder = Color.adaptive(light: 0xE8E8F0, dark: 0xFFFFFF, darkAlpha: 0.08)
-    static let tileBg = Color.adaptive(light: 0xFBFAFF, dark: 0x202425)
-    static let tileBorder = Color.adaptive(light: 0xE8E8F0, dark: 0xFFFFFF, darkAlpha: 0.09)
-    static let divider = Color.adaptive(light: 0xF2F0F8, dark: 0xFFFFFF, darkAlpha: 0.08)
-
-    // Account pill.
-    static let pillBg = Color.adaptive(
-        light: 0xFFFFFF, lightAlpha: 0.8, dark: 0xFFFFFF, darkAlpha: 0.07)
-    static let pillBorder = Color.adaptive(
-        light: 0xE2E0EE, dark: 0xFFFFFF, darkAlpha: 0.11)
+    static let panelTop = Color.adaptive(light: 0xFFFFFF, dark: 0x1C1924)
+    static let panelBottom = panelTop
+    static let cardFill = panelTop
+    static let cardBorder = Color.adaptive(light: 0xE0DFE7, dark: 0x3F3243)
+    static let tileBg = cardBorder
+    static let tileBorder = cardBorder
+    static let divider = cardBorder
+    static let pillBg = tileBg
+    static let pillBorder = cardBorder
 
     // Token split accents (in = brand, out = indigo).
     static let tokenInBg = Color.adaptive(light: 0xF4F0FB, dark: 0x9400D3, darkAlpha: 0.20)
@@ -49,10 +44,26 @@ enum Theme {
         LinearGradient(colors: [brand, indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Shared dashboard numerals.
-    static func serif(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .default).monospacedDigit()
+    private static let fontName: String = {
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("Fonts/Supreme-Variable.ttf")
+        let url = bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            ?? Bundle.module.url(forResource: "Supreme-Variable", withExtension: "ttf", subdirectory: "Fonts")
+        guard let url else { return "Supreme-Regular" }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]
+        return descriptors?.first.flatMap {
+            CTFontDescriptorCopyAttribute($0, kCTFontNameAttribute) as? String
+        } ?? "Supreme-Regular"
+    }()
+
+    static func font(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .custom(fontName, fixedSize: size).weight(weight)
     }
+
+    static func serif(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        font(size: size, weight: weight).monospacedDigit()
+    }
+
 }
 
 /// The panel's appearance choice, cycled by the header button and persisted.
