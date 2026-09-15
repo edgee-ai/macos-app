@@ -295,17 +295,23 @@ struct MenuContentView: View {
                     ("Output", Double(totals.outputTokens - min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.output),
                     ("Reasoning", Double(min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.reasoning),
                 ]
-                let total = segments.reduce(0) { $0 + $1.1 }
+                let visibleSegments = segments.filter { $0.1 > 0 }
+                let total = visibleSegments.reduce(0) { $0 + $1.1 }
                 if total > 0 {
                     GeometryReader { geometry in
+                        let minimum = min(3, geometry.size.width / Double(visibleSegments.count))
+                        let remaining = max(0, geometry.size.width - minimum * Double(visibleSegments.count))
                         HStack(spacing: 0) {
-                            ForEach(segments, id: \.0) { segment in
-                                Capsule().fill(segment.2)
-                                    .frame(width: geometry.size.width * segment.1 / total)
+                            ForEach(visibleSegments, id: \.0) { segment in
+                                Rectangle().fill(segment.2)
+                                    .frame(width: minimum + remaining * segment.1 / total)
+                                    .help("\(segment.0): \(segment.1.formatted(.number.precision(.fractionLength(0)))) tokens")
                             }
                         }
+                        .clipShape(Capsule())
                     }
-                    .frame(height: 5)
+                    .frame(height: 6)
+                    .help("Small segments have a minimum display width. Token counts are exact.")
                     .accessibilityLabel("Input, cache write, cached input, output, and reasoning token distribution")
                 }
             }
