@@ -128,6 +128,16 @@ struct RelayTarget: Identifiable {
             proxyOnly: false, detectPaths: appPaths("Visual Studio Code.app"),
             detectCommand: nil, mode: .relay),
         RelayTarget(
+            id: "copilot-desktop", name: "GitHub Copilot", symbol: "sparkles",
+            proxyOnly: false, detectPaths: appPaths("GitHub Copilot.app"),
+            detectCommand: nil, mode: .relay),
+        RelayTarget(
+            id: "intellij", name: "IntelliJ IDEA", symbol: "chevron.left.forwardslash.chevron.right",
+            proxyOnly: false,
+            detectPaths: ["IntelliJ IDEA.app", "IntelliJ IDEA CE.app", "IntelliJ IDEA Ultimate.app"]
+                .flatMap { appPaths($0) },
+            detectCommand: nil, mode: .relay),
+        RelayTarget(
             id: "claude-desktop", name: "Claude Desktop", symbol: "network",
             proxyOnly: false, detectPaths: appPaths("Claude.app"), detectCommand: nil,
             mode: .relay),

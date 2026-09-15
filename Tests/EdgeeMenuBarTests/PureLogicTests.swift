@@ -88,6 +88,8 @@ final class PureLogicTests: XCTestCase {
             "claude-desktop": .relay,
             "cursor": .relay,
             "copilot-vscode": .relay,
+            "copilot-desktop": .relay,
+            "intellij": .relay,
         ]
         XCTAssertEqual(Set(byId.keys), Set(expected.keys))
         for (id, mode) in expected {
@@ -115,7 +117,7 @@ final class PureLogicTests: XCTestCase {
         let desktopApps = RelayTarget.all.filter(\.isDesktopApp)
         XCTAssertEqual(
             desktopApps.map(\.id),
-            ["cursor", "copilot-vscode", "claude-desktop", "codex-desktop"])
+            ["cursor", "copilot-vscode", "copilot-desktop", "intellij", "claude-desktop", "codex-desktop"])
         XCTAssertTrue(desktopApps.allSatisfy { $0.detectCommand == nil })
         XCTAssertTrue(desktopApps.allSatisfy { !$0.detectPaths.isEmpty })
         XCTAssertTrue(RelayTarget.installedDesktopApps.allSatisfy {
