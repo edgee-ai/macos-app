@@ -7,6 +7,16 @@ import XCTest
 /// contract. Anything that needs a subprocess or SwiftUI is out of scope here.
 final class PureLogicTests: XCTestCase {
 
+    func testCacheShareUsesAllInputTokens() {
+        XCTAssertEqual(CacheShare.fraction(input: 126_000, cached: 3_900_000)!, 0.9687, accuracy: 0.0001)
+        XCTAssertEqual(CacheShare.fraction(input: 0, cached: 100), 1)
+        XCTAssertEqual(CacheShare.fraction(input: 100, cached: 0), 0)
+        XCTAssertNil(CacheShare.fraction(input: 0, cached: 0))
+        XCTAssertNil(CacheShare.fraction(input: 100, cached: nil))
+        XCTAssertEqual(CacheShare.fraction(input: .max, cached: .max), 0.5)
+        XCTAssertEqual(CacheShare.fraction(input: 100, cached: 200, cacheWrite: 100), 0.5)
+    }
+
     // MARK: TokenFormat
 
     func testTokenFormatShort() {
@@ -224,6 +234,8 @@ final class PureLogicTests: XCTestCase {
                 "input_tokens": 31400,
                 "output_tokens": 2900,
                 "cached_input_tokens": 24000,
+                "cache_creation_input_tokens": 1200,
+                "reasoning_output_tokens": 500,
                 "cost_usd": 1.2345,
                 "token_cost_savings": 12,
                 "uncompressed_tools_tokens": 100,
@@ -251,6 +263,8 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 4)
         XCTAssertEqual(stats.totals.requests, 38)
         XCTAssertEqual(stats.totals.cachedInputTokens, 24_000)
+        XCTAssertEqual(stats.totals.cacheCreationInputTokens, 1200)
+        XCTAssertEqual(stats.totals.reasoningOutputTokens, 500)
         XCTAssertEqual(stats.totals.costUsd, 1.2345)
         XCTAssertEqual(stats.totals.compressionPct, 40)
         XCTAssertEqual(stats.recent.count, 1)
@@ -272,6 +286,8 @@ final class PureLogicTests: XCTestCase {
         XCTAssertEqual(stats.sessions, 0)
         XCTAssertNil(stats.totals.compressionPct)
         XCTAssertNil(stats.totals.cachedInputTokens)
+        XCTAssertNil(stats.totals.cacheCreationInputTokens)
+        XCTAssertNil(stats.totals.reasoningOutputTokens)
         XCTAssertNil(stats.totals.costUsd)
         XCTAssertTrue(stats.recent.isEmpty)
     }

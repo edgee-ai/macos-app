@@ -24,7 +24,7 @@ struct SectionLabel: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .tracking(0.9)
             .foregroundStyle(Theme.labelMuted)
     }
@@ -509,15 +509,18 @@ struct AccountPill: View {
                 Button("Refresh") { Task { await model.reload() } }
                 Button("Log out", role: .destructive) { Task { await model.logout() } }
             } label: {
-                pill {
-                    label(
-                        initial: initial(status.email),
-                        text: status.email ?? "Logged in", chevron: true)
-                }
+                Text(initial(status.email))
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.pillBg, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.pillBorder, lineWidth: 1))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .fixedSize()
+            .frame(width: 34)
+            .help(status.email ?? "Account")
+            .accessibilityLabel("Account")
             .disabled(model.switching)
         } else {
             Button { Task { await model.login() } } label: {

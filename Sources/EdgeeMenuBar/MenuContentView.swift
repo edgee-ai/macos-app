@@ -1,10 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The dropdown panel shown when the menubar icon is clicked — the roomier (5b)
-/// "Edgee Menubar" design: a lilac card with an account pill, last-hour stats,
-/// a token split, and the launch/relay grid. Data + actions live in `MenuModel`
-/// and `RelayManager`.
+/// Usage dashboard and agent launcher backed by live CLI data.
 struct MenuContentView: View {
     @EnvironmentObject private var model: MenuModel
     @EnvironmentObject private var relays: RelayManager
@@ -15,6 +12,7 @@ struct MenuContentView: View {
     /// The panel's own window, so a log out can dismiss the panel (see
     /// `PanelWindowReader`).
     @State private var panelWindow: NSWindow?
+    @State private var selectedTab = "Overview"
 
     private var appearance: Appearance { Appearance(rawValue: appearanceRaw) ?? .system }
     /// The scheme the panel actually renders in (explicit choice, else the OS's).
@@ -30,32 +28,27 @@ struct MenuContentView: View {
             } else if needsOrg {
                 orgPickerView
             } else {
-                lastHour
-                statTiles
-                tokens
-                if !RelayTarget.installedDesktopApps.isEmpty {
-                    LaunchStrip()
+                navigation
+                if selectedTab == "Overview" {
+                    lastHour
+                    spendCard
+                    tokenBreakdown
+                } else {
+                    if RelayTarget.installedDesktopApps.isEmpty {
+                        Text("No supported desktop agents installed.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.secondaryText)
+                            .frame(maxWidth: .infinity, minHeight: 160)
+                    } else {
+                        LaunchStrip()
+                    }
                 }
-                openConsole
             }
             footer.padding(.top, 2)
         }
-        .padding(14)
-        .frame(width: 380)
-        .background {
-            ZStack {
-                LinearGradient(
-                    colors: [Theme.panelTop, Theme.panelBottom],
-                    startPoint: .top, endPoint: .bottom)
-                RadialGradient(
-                    colors: [Theme.brand.opacity(resolvedScheme == .dark ? 0.45 : 0.22), .clear],
-                    center: .topLeading, startRadius: 0, endRadius: 190)
-                RadialGradient(
-                    colors: [Theme.indigo.opacity(resolvedScheme == .dark ? 0.40 : 0.18), .clear],
-                    center: .topTrailing, startRadius: 0, endRadius: 190)
-            }
-            .ignoresSafeArea()
-        }
+        .padding(20)
+        .frame(width: 420)
+        .background(Theme.panelTop)
         .environment(\.colorScheme, resolvedScheme)
         .preferredColorScheme(appearance.colorScheme)
         .background(PanelWindowReader { panelWindow = $0 })
@@ -187,8 +180,8 @@ struct MenuContentView: View {
                         .frame(width: 15, height: 17)
                         .foregroundStyle(.white))
                 .shadow(color: Theme.brand.opacity(0.4), radius: 6, y: 3)
-            Text("Edgee")
-                .font(Theme.serif(19))
+            Text("edgee")
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
             AccountPill()
@@ -226,21 +219,121 @@ struct MenuContentView: View {
         .padding(.horizontal, 4)
     }
 
-    private var statTiles: some View {
-        let active = activeTile
-        return HStack(spacing: 12) {
-            StatTile(label: "Requests", value: requestsValue)
-            StatTile(label: "Cost", value: costValue)
-            StatTile(label: "Active", value: active.value, dot: active.on ? Theme.running : nil)
+    private var navigation: some View {
+        HStack(spacing: 0) {
+            ForEach(["Overview", "Agents"], id: \.self) { tab in
+                Button { selectedTab = tab } label: {
+                    Text(tab)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(selectedTab == tab ? Theme.ink : Theme.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(selectedTab == tab ? Theme.accent : .clear)
+                                .frame(height: 2)
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.divider).frame(height: 1) }
+        .padding(.bottom, 6)
+    }
+
+    private var spendCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                SectionLabel("Total spend")
+                Spacer()
+                Text("USD").font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            Text(costValue)
+                .font(.system(size: 44, weight: .medium)).monospacedDigit()
+                .foregroundStyle(Theme.ink)
+            Rectangle().fill(Theme.divider).frame(height: 1)
+            HStack {
+                metric("Requests", value: requestsValue)
+                Spacer()
+                metric("Active", value: activeTile.value)
+                Spacer()
+                metric("Cache share", value: cacheShare)
+            }
+        }
+        .padding(18)
+        .cardSurface()
+    }
+
+    private func metric(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title)
+            Text(value).font(.system(size: 22, weight: .medium)).monospacedDigit()
+                .foregroundStyle(Theme.ink)
         }
     }
 
-    private var tokens: some View {
-        TokensCard(
-            inValue: tokenValue(\.inputTokens),
-            inSub: cachedSub,
-            outValue: tokenValue(\.outputTokens),
-            outSub: "generated")
+    private var cacheShare: String {
+        guard let totals = model.stats?.totals,
+            let share = CacheShare.fraction(input: totals.inputTokens, cached: totals.cachedInputTokens, cacheWrite: totals.cacheCreationInputTokens ?? 0)
+        else { return "—" }
+        return share.formatted(.percent.precision(.fractionLength(0)))
+    }
+
+    private var tokenBreakdown: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                SectionLabel("Token breakdown")
+                Spacer()
+                Text("VOLUME").font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            if let totals = model.stats?.totals {
+                let segments: [(String, Double, Color)] = [
+                    ("Input", Double(totals.inputTokens), Theme.input),
+                    ("Cache write", Double(totals.cacheCreationInputTokens ?? 0), Theme.cacheWrite),
+                    ("Cached input", Double(totals.cachedInputTokens ?? 0), Theme.cached),
+                    ("Output", Double(totals.outputTokens - min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.accent),
+                    ("Reasoning", Double(min(totals.outputTokens, totals.reasoningOutputTokens ?? 0)), Theme.reasoning),
+                ]
+                let total = segments.reduce(0) { $0 + $1.1 }
+                if total > 0 {
+                    GeometryReader { geometry in
+                        HStack(spacing: 0) {
+                            ForEach(segments, id: \.0) { segment in
+                                Capsule().fill(segment.2)
+                                    .frame(width: geometry.size.width * segment.1 / total)
+                            }
+                        }
+                    }
+                    .frame(height: 5)
+                    .accessibilityLabel("Input, cache write, cached input, output, and reasoning token distribution")
+                }
+            }
+            tokenRow("Input", value: tokenValue(\.inputTokens), color: Theme.input)
+            if let written = model.stats?.totals.cacheCreationInputTokens {
+                tokenRow("Cache write", value: TokenFormat.short(written), color: Theme.cacheWrite)
+            }
+            if let cached = model.stats?.totals.cachedInputTokens {
+                tokenRow("Cached input", value: TokenFormat.short(cached), color: Theme.cached)
+            }
+            tokenRow("Output", value: tokenValue(\.outputTokens), color: Theme.accent)
+            if let reasoning = model.stats?.totals.reasoningOutputTokens {
+                tokenRow("Reasoning (included in output)", value: TokenFormat.short(reasoning), color: Theme.reasoning)
+            }
+        }
+        .padding(18)
+        .cardSurface()
+    }
+
+    private func tokenRow(_ label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text(label).font(.system(size: 13))
+            Spacer()
+            Text(value).font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(Theme.secondaryText)
+        }
+        .foregroundStyle(Theme.bodyText)
     }
 
     // MARK: Actions
@@ -251,24 +344,22 @@ struct MenuContentView: View {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            HStack(spacing: 9) {
-                Image(systemName: "macwindow").font(.system(size: 13, weight: .semibold))
-                Text("Open Edgee Console").font(.system(size: 13, weight: .semibold))
-                Text("⌘O").font(.system(size: 11)).opacity(0.75)
-            }
-            .foregroundStyle(.white)
-            .padding(.vertical, 13)
-            .frame(maxWidth: .infinity)
-            .background(
-                Theme.brandGradient, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .shadow(color: Theme.brand.opacity(0.5), radius: 9, y: 3)
+            Label("Console", systemImage: "arrow.up.right")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.secondaryText)
         }
         .buttonStyle(.plain)
         .keyboardShortcut("o", modifiers: .command)
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 14) {
+            Button { Task { await model.reload() } } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("Refresh usage")
+            .disabled(model.loading || model.statsLoading)
+            openConsole
             Spacer()
             Button {
                 relays.stopAll()

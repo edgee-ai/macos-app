@@ -1,27 +1,30 @@
 import AppKit
 import SwiftUI
 
-/// Palette + type helpers for the menubar panel, lifted from the Claude Design
-/// "Edgee Menubar" mock — the roomier light (5b) and dark (5c) variants. Colors
-/// are adaptive: each resolves to its light or dark value from the surrounding
-/// `colorScheme`, which the panel drives from the user's appearance choice.
+/// Adaptive neutral surfaces with lime dashboard accents.
 enum Theme {
+    static let accent = Color.adaptive(light: 0x527C20, dark: 0xBDF180)
+    static let input = Color(hex: 0x7ACDBD)
+    static let cacheWrite = Color(hex: 0xAF98ED)
+    static let reasoning = Color(hex: 0xF2BA70)
+    static let cached = Color(hex: 0x79AAF0)
+
     // Brand constants (identical across modes).
     static let brand = Color(hex: 0x9400D3)
     static let indigo = Color(hex: 0x3D2EB3)
 
     // Text ramp.
-    static let ink = Color.adaptive(light: 0x0F0715, dark: 0xF4F1FA)
-    static let bodyText = Color.adaptive(light: 0x374151, dark: 0xE6E1F0)
-    static let labelMuted = Color.adaptive(light: 0xA0A0B8, dark: 0x7E7890)
-    static let secondaryText = Color.adaptive(light: 0xB0A8C0, dark: 0x6F6980)
+    static let ink = Color.adaptive(light: 0x0F0715, dark: 0xF1F4F2)
+    static let bodyText = Color.adaptive(light: 0x374151, dark: 0xE1E5E3)
+    static let labelMuted = Color.adaptive(light: 0xA0A0B8, dark: 0x899397)
+    static let secondaryText = Color.adaptive(light: 0xB0A8C0, dark: 0x899397)
 
     // Surfaces.
-    static let panelTop = Color.adaptive(light: 0xF4F2FB, dark: 0x221B2C)
-    static let panelBottom = Color.adaptive(light: 0xECEBF5, dark: 0x171220)
-    static let cardFill = Color.adaptive(light: 0xFFFFFF, dark: 0xFFFFFF, darkAlpha: 0.045)
+    static let panelTop = Color.adaptive(light: 0xF5F7F5, dark: 0x0C0F10)
+    static let panelBottom = Color.adaptive(light: 0xF5F7F5, dark: 0x0C0F10)
+    static let cardFill = Color.adaptive(light: 0xFFFFFF, dark: 0x161A1B)
     static let cardBorder = Color.adaptive(light: 0xE8E8F0, dark: 0xFFFFFF, darkAlpha: 0.08)
-    static let tileBg = Color.adaptive(light: 0xFBFAFF, dark: 0xFFFFFF, darkAlpha: 0.04)
+    static let tileBg = Color.adaptive(light: 0xFBFAFF, dark: 0x202425)
     static let tileBorder = Color.adaptive(light: 0xE8E8F0, dark: 0xFFFFFF, darkAlpha: 0.09)
     static let divider = Color.adaptive(light: 0xF2F0F8, dark: 0xFFFFFF, darkAlpha: 0.08)
 
@@ -46,10 +49,9 @@ enum Theme {
         LinearGradient(colors: [brand, indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Serif face standing in for the mock's "Sentient" — used for the wordmark
-    /// and the big tabular stat numerals.
+    /// Shared dashboard numerals.
     static func serif(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .serif).monospacedDigit()
+        .system(size: size, weight: weight, design: .default).monospacedDigit()
     }
 }
 

@@ -23,6 +23,8 @@ struct Stats: Codable {
         // still decodes instead of nil-ing the whole struct — the UI just hides
         // the "cached" sub-line when it's absent.
         let cachedInputTokens: UInt64?
+        let cacheCreationInputTokens: UInt64?
+        let reasoningOutputTokens: UInt64?
         /// Estimated model spend in US dollars. Optional so an older external CLI
         /// can still populate the rest of the dashboard.
         let costUsd: Double?
@@ -77,5 +79,15 @@ enum TokenFormat {
             return "\(Int(value.rounded()))\(suffix)"
         }
         return String(format: "%.1f%@", value, suffix)
+    }
+}
+
+/// CLI reports uncached input separately from cached input.
+enum CacheShare {
+    static func fraction(input: UInt64, cached: UInt64?, cacheWrite: UInt64 = 0) -> Double? {
+        guard let cached else { return nil }
+        let total = Double(input) + Double(cached) + Double(cacheWrite)
+        guard total > 0 else { return nil }
+        return Double(cached) / total
     }
 }
