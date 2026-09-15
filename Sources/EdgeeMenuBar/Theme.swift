@@ -7,7 +7,7 @@ enum Theme {
     static let accent = Color.adaptive(light: 0x820ACD, dark: 0xBB26CF)
     static let input = Color(hex: 0x0EA5E9)
     static let cached = Color(hex: 0xFB923C)
-    static let cacheWrite = cached
+    static let cacheWrite = Color(hex: 0x7C3AED)
     static let output = Color(hex: 0x2DD4BF)
     static let reasoning = Color(hex: 0xFB7185)
 
