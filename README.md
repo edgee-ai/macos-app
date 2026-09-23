@@ -34,8 +34,8 @@ embedded CLI's version, and always records that CLI's version in the plist's
 
 ## Latest request routing
 
-The menubar shows the destination model and local request time (for example,
-“→ gpt-5.6-terra · 16:42”) when your latest recorded request was rerouted.
+The menubar shows the destination model (for example, “→ gpt-5.6-terra”)
+when your latest recorded request was rerouted.
 Hover for the full route and request date.
 Overview shows the same details below Total spend, including fallback and unknown
 states. Data refreshes every 5 seconds and when the panel opens; request logs can
