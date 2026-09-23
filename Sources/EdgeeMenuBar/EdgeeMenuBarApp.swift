@@ -18,7 +18,16 @@ struct EdgeeMenuBarApp: App {
                 .environmentObject(relays)
                 .environmentObject(model)
         } label: {
-            Image(nsImage: AppIcons.menuBar)
+            HStack(spacing: 4) {
+                Image(nsImage: AppIcons.menuBar)
+                if model.lastRequestWasRerouted, let request = model.stats?.lastRequest {
+                    let destination = request.model.split(separator: "/").last.map(String.init) ?? request.model
+                    let time = request.date.map { " · \($0.formatted(date: .omitted, time: .shortened))" } ?? ""
+                    Text("→ \(destination)\(time)")
+                }
+            }
+            .accessibilityLabel(model.routingTooltip)
+            .help(model.routingTooltip)
         }
         .menuBarExtraStyle(.window)
     }

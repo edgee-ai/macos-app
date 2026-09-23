@@ -32,6 +32,20 @@ menubar — no Dock icon) and opens it. Click the menubar icon for the dropdown.
 embedded CLI's version, and always records that CLI's version in the plist's
 `EdgeeCLIVersion`.
 
+## Latest request routing
+
+The menubar shows the destination model and local request time (for example,
+“→ gpt-5.6-terra · 16:42”) when your latest recorded request was rerouted.
+Hover for the full route and request date.
+Overview shows the same details below Total spend, including fallback and unknown
+states. Data refreshes every 5 seconds and when the panel opens; request logs can
+arrive after a delay.
+
+This requires a CLI build exposing `last_request` and `last_request_checked` in
+`edgee stats --json`. Older CLIs show “Request routing unavailable”. The lookup
+covers your current API keys in the dashboard's usage window (currently one hour),
+across devices. No requests in that window clears the menubar indicator.
+
 ## Which apps get a chip
 
 The menubar shows desktop apps only, and only when their app bundle is installed
