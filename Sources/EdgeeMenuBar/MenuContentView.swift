@@ -32,6 +32,7 @@ struct MenuContentView: View {
                 if selectedTab == "Overview" {
                     lastHour
                     spendCard
+                    lastRequestCard
                     tokenBreakdown
                 } else {
                     if RelayTarget.installedDesktopApps.isEmpty {
@@ -262,6 +263,41 @@ struct MenuContentView: View {
         }
         .padding(18)
         .cardSurface()
+    }
+
+    private var lastRequestCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SectionLabel("Last request")
+                Spacer()
+                if let date = model.stats?.lastRequest?.date {
+                    Text(date, style: .relative)
+                        .font(Theme.font(size: 11))
+                        .foregroundStyle(Theme.secondaryText)
+                        .help(date.formatted(date: .complete, time: .standard))
+                }
+            }
+            if let request = model.stats?.lastRequest {
+                Label(request.routingLabel,
+                      systemImage: request.isReroute == true ? "arrow.triangle.branch" : "arrow.right")
+                    .font(Theme.font(size: 13, weight: .semibold))
+                    .foregroundStyle(request.isReroute == true ? Theme.accent : Theme.ink)
+                Text(request.modelLabel)
+                    .font(Theme.font(size: 12))
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(model.statsLoading ? "Loading…" :
+                     model.stats?.lastRequestChecked == true ? "No requests in this period" :
+                     "Request routing unavailable")
+                    .font(Theme.font(size: 12))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+        .help("Latest recorded request for your current API keys in this usage period. Logs may arrive after a delay. Refresh to check again.")
     }
 
     private func metric(_ title: String, value: String) -> some View {

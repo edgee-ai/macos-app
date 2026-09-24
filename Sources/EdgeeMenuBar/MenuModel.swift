@@ -17,8 +17,37 @@ final class MenuModel: ObservableObject {
     /// dismiss the panel — swapping the dashboard for the much shorter login
     /// card in place leaves the panel's window at its old size.
     @Published private(set) var logoutCount = 0
+    private var refreshTask: Task<Void, Never>?
+    private var reloadGeneration = 0
+
+    init() {
+        // App-owned polling continues while the dropdown is closed.
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.reload()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    deinit { refreshTask?.cancel() }
+
+    var lastRequestWasRerouted: Bool {
+        status?.loggedIn == true && !switching && stats?.source == "api"
+            && stats?.lastRequestChecked == true && stats?.lastRequest?.isReroute == true
+    }
+
+    var routingTooltip: String {
+        guard status?.loggedIn == true, !switching,
+              let request = stats?.lastRequest else { return "Edgee" }
+        let time = request.date.map { " · \($0.formatted(date: .abbreviated, time: .standard))" } ?? ""
+        return "Last recorded request: \(request.routingLabel) · \(request.modelLabel)\(time)"
+    }
 
     func reload() async {
+        guard !switching else { return }
+        reloadGeneration += 1
+        let generation = reloadGeneration
         // Only show the loading placeholders on a cold start; a refresh keeps the
         // cached values on screen until the new ones arrive.
         if status == nil { loading = true }
@@ -29,12 +58,14 @@ final class MenuModel: ObservableObject {
         async let profs = EdgeeCLI.profiles()
         async let organizations = EdgeeCLI.orgs()
 
-        status = await auth
+        let results = await (auth, summary, profs, organizations)
+        guard generation == reloadGeneration, !switching else { return }
+        status = results.0
         loading = false
-        stats = await summary
+        stats = results.1
         statsLoading = false
-        profiles = await profs
-        orgs = await organizations
+        profiles = results.2
+        orgs = results.3
     }
 
     func login() async {
@@ -45,6 +76,8 @@ final class MenuModel: ObservableObject {
     }
 
     func switchProfile(_ name: String) async {
+        stats = nil
+        reloadGeneration += 1
         switching = true
         await EdgeeCLI.switchProfile(name)
         switching = false
@@ -52,6 +85,8 @@ final class MenuModel: ObservableObject {
     }
 
     func switchOrg(_ idOrSlug: String) async {
+        stats = nil
+        reloadGeneration += 1
         switching = true
         await EdgeeCLI.switchOrg(idOrSlug)
         switching = false
@@ -59,6 +94,8 @@ final class MenuModel: ObservableObject {
     }
 
     func logout() async {
+        stats = nil
+        reloadGeneration += 1
         switching = true
         await EdgeeCLI.logout()
         switching = false

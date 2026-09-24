@@ -13,6 +13,41 @@ struct Stats: Codable {
     let window: String?
     /// Live online-session count for this account from the API when logged in.
     let activeSessions: UInt64?
+    /// Latest recorded request for this user's current keys within `window`.
+    let lastRequest: LastRequest?
+    /// Distinguishes an empty history from older CLIs and failed lookups.
+    let lastRequestChecked: Bool?
+
+    struct LastRequest: Codable {
+        let timestamp: String
+        let model: String
+        let originalModel: String?
+        let isReroute: Bool?
+        let isFallback: Bool?
+        let isPlanFallback: Bool?
+
+        var routingLabel: String {
+            if isReroute == true { return "Rerouted" }
+            if isFallback == true || isPlanFallback == true { return "Fallback" }
+            if isReroute == false { return "No reroute" }
+            return "Routing unknown"
+        }
+
+        var modelLabel: String {
+            if isReroute == true, let originalModel, !originalModel.isEmpty {
+                return "\(originalModel) → \(model)"
+            }
+            return model
+        }
+
+        var date: Date? {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: timestamp) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: timestamp)
+        }
+    }
 
     struct Totals: Codable {
         let requests: UInt64

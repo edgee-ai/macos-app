@@ -322,7 +322,46 @@ final class PureLogicTests: XCTestCase {
         XCTAssertNil(stats.totals.cacheCreationInputTokens)
         XCTAssertNil(stats.totals.reasoningOutputTokens)
         XCTAssertNil(stats.totals.costUsd)
+        XCTAssertNil(stats.lastRequest)
+        XCTAssertNil(stats.lastRequestChecked)
         XCTAssertTrue(stats.recent.isEmpty)
+    }
+
+    func testLatestRequestRouting() throws {
+        func request(_ fields: String = "") throws -> Stats.LastRequest {
+            try decoder().decode(Stats.LastRequest.self, from: Data(
+                "{\"timestamp\":\"2026-09-23T12:00:00.123456Z\",\"model\":\"kimi\"\(fields)}".utf8))
+        }
+        let rerouted = try request(",\"is_reroute\":true,\"original_model\":\"opus\"")
+        XCTAssertEqual(rerouted.routingLabel, "Rerouted")
+        XCTAssertEqual(rerouted.modelLabel, "opus → kimi")
+        XCTAssertNotNil(rerouted.date)
+        XCTAssertEqual(try request(",\"is_reroute\":false").routingLabel, "No reroute")
+        XCTAssertEqual(try request(",\"is_reroute\":false,\"is_fallback\":true").routingLabel, "Fallback")
+        XCTAssertEqual(try request(",\"is_plan_fallback\":true").routingLabel, "Fallback")
+        XCTAssertEqual(try request().routingLabel, "Routing unknown")
+        XCTAssertEqual(try request(",\"is_reroute\":true").modelLabel, "kimi")
+        let wholeSeconds = try decoder().decode(Stats.LastRequest.self, from: Data(
+            #"{"timestamp":"2026-09-23T12:00:00Z","model":"kimi","is_reroute":null}"#.utf8))
+        XCTAssertNotNil(wholeSeconds.date)
+        XCTAssertEqual(wholeSeconds.routingLabel, "Routing unknown")
+    }
+
+    func testStatsLatestRequestContract() throws {
+        let base = #"""
+            {"source":"api","window":"1h","sessions":1,"recent":[],
+            "totals":{"requests":1,"errors":0,"input_tokens":0,"output_tokens":0,
+            "token_cost_savings":0,"uncompressed_tools_tokens":0,"compressed_tools_tokens":0},
+            "last_request_checked":true
+            """#
+        let empty = try decoder().decode(Stats.self, from: Data((base + "}").utf8))
+        XCTAssertEqual(empty.lastRequestChecked, true)
+        XCTAssertNil(empty.lastRequest)
+        let populated = try decoder().decode(Stats.self, from: Data((base + #"""
+            ,"last_request":{"timestamp":"2026-09-23T12:00:00Z","model":"kimi",
+            "original_model":"opus","is_reroute":true,"is_fallback":false}}
+            """#).utf8))
+        XCTAssertEqual(populated.lastRequest?.modelLabel, "opus → kimi")
     }
 
     func testStatsDecodingApiSource() throws {
