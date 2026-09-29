@@ -45,7 +45,7 @@ jobs:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve versions
         id: v
@@ -72,7 +72,7 @@ jobs:
           echo "cli=$CLI" >> "$GITHUB_OUTPUT"
           echo "app $V, embedding edgee CLI $CLI"
 
-      - uses: maxim-lobanov/setup-xcode@v1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable
 
