@@ -13,6 +13,7 @@ struct MenuContentView: View {
     /// `PanelWindowReader`).
     @State private var panelWindow: NSWindow?
     @State private var selectedTab = "Overview"
+    @State private var contentHeight: CGFloat = 0
 
     private var appearance: Appearance { Appearance(rawValue: appearanceRaw) ?? .system }
     /// The scheme the panel actually renders in (explicit choice, else the OS's).
@@ -49,16 +50,39 @@ struct MenuContentView: View {
         }
         .padding(20)
         .frame(width: 420)
-        // Let MenuBarExtra resize its window to the current tab and async data,
-        // rather than centering a shorter card inside the previous window size.
+        // Size to the content's ideal height, then fit the panel window to it.
+        // `MenuBarExtra(.window)` grows its window but never shrinks it, so a
+        // shorter tab (Agents) or a log out leaves the card centered in a tall,
+        // mostly empty window.
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            contentHeight = height
+            fitPanel()
+        }
         .background(Theme.panelTop)
         .environment(\.colorScheme, resolvedScheme)
         .preferredColorScheme(appearance.colorScheme)
-        .background(PanelWindowReader { panelWindow = $0 })
+        .background(PanelWindowReader { window in
+            guard window !== panelWindow else { return }
+            panelWindow = window
+            fitPanel()
+        })
         // Dismiss the panel after logging out of the current account.
         .onChange(of: model.logoutCount) { panelWindow?.close() }
         .task { await model.reload() }
+    }
+
+    /// Resize the panel window to the content's height, keeping its top edge
+    /// pinned under the menubar.
+    private func fitPanel() {
+        guard let window = panelWindow, contentHeight > 0 else { return }
+        let current = window.contentRect(forFrameRect: window.frame)
+        guard abs(current.height - contentHeight) > 0.5 else { return }
+        let target = window.frameRect(forContentRect: NSRect(
+            x: current.minX, y: current.maxY - contentHeight,
+            width: current.width, height: contentHeight
+        ))
+        window.setFrame(target, display: true)
     }
 
     private var isLoggedIn: Bool { model.status?.loggedIn == true }
